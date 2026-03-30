@@ -50,6 +50,7 @@ git add .
 git commit -m "Initial commit: Site Structure Analyzer"
 git push origin main
 
+```bash
 Затем включите GitHub Pages (см. раздел «Настройка GitHub Pages»).
 
 ### Вариант 3: Локальный запуск
