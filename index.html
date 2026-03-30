@@ -1,1 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Site Structure Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Site Structure Analyzer</h1>
+        <p class="description">Анализ HTML-структуры сайта и вывод результата в JSON</p>
 
+        <div class="input-group">
+            <label for="targetUrl">URL для анализа:</label>
+            <input 
+                type="text" 
+                id="targetUrl" 
+                placeholder="https://example.com/video/"
+                value=""
+            >
+            <!-- ============================================== -->
+            <!-- 👆 ВСТАВЬТЕ ВАШУ ССЫЛКУ В АТРИБУТ value ВЫШЕ  -->
+            <!-- Например: value="https://trahkino.me/video/"   -->
+            <!-- ============================================== -->
+        </div>
+
+        <div class="input-group">
+            <label for="proxySelect">CORS Proxy:</label>
+            <select id="proxySelect">
+                <option value="https://api.allorigins.win/raw?url=">allorigins.win (raw)</option>
+                <option value="https://corsproxy.io/?">corsproxy.io</option>
+                <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs.com</option>
+                <option value="">Без прокси (только если CORS разрешён)</option>
+            </select>
+        </div>
+
+        <div class="buttons">
+            <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
+            <button id="btnCopy" onclick="copyResults()" disabled>📋 Копировать JSON</button>
+            <button id="btnDownload" onclick="downloadResults()" disabled>💾 Скачать JSON</button>
+        </div>
+
+        <div id="status" class="status"></div>
+
+        <div id="progress-container" class="progress-container" style="display:none;">
+            <div id="progress-bar" class="progress-bar"></div>
+            <span id="progress-text" class="progress-text">0%</span>
+        </div>
+
+        <div id="results" class="results" style="display:none;">
+            <h2>📊 Результаты анализа</h2>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('formatted')">Форматированный</button>
+                <button class="tab" onclick="showTab('raw')">Raw JSON</button>
+                <button class="tab" onclick="showTab('visual')">Визуальный</button>
+            </div>
+
+            <div id="tab-formatted" class="tab-content active">
+                <pre id="jsonFormatted"></pre>
+            </div>
+            <div id="tab-raw" class="tab-content">
+                <textarea id="jsonRaw" readonly></textarea>
+            </div>
+            <div id="tab-visual" class="tab-content">
+                <div id="visualReport"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="parser.js"></script>
+</body>
+</html>
