@@ -97,7 +97,6 @@ function analyzeEncoding(doc, html) {
         if (match) charset = match[1];
     }
     
-    // Проверка по DOCTYPE и BOM
     const hasUtf8Bom = html.charCodeAt(0) === 0xFEFF;
     
     return {
@@ -120,7 +119,6 @@ function analyzePagination(doc, baseUrl, targetUrl) {
         }
     };
 
-    // Ищем ссылки пагинации
     const paginationSelectors = [
         '.pagination a', '.pager a', '.pages a', '.page-numbers a',
         'nav.pagination a', '.paginator a', '.page-nav a',
@@ -146,7 +144,6 @@ function analyzePagination(doc, baseUrl, targetUrl) {
         } catch (e) {}
     }
 
-    // Если специальные селекторы не нашли, ищем по паттернам в href
     if (paginationLinks.length === 0) {
         const allLinks = doc.querySelectorAll('a[href]');
         allLinks.forEach(a => {
@@ -175,7 +172,6 @@ function analyzePagination(doc, baseUrl, targetUrl) {
         const resolvedLinks = uniqueArray(paginationLinks.map(h => resolveUrl(h, baseUrl)));
         result.pagination.examples = resolvedLinks.slice(0, 10);
         
-        // Определяем паттерн
         const sampleHref = paginationLinks[0];
         if (/[?&]page=\d+/i.test(sampleHref)) {
             result.pagination.type = 'query_parameter';
@@ -192,7 +188,6 @@ function analyzePagination(doc, baseUrl, targetUrl) {
         }
     }
 
-    // Ищем контейнер пагинации
     const paginationContainers = [
         '.pagination', '.pager', '.pages', '.paginator',
         'nav.pagination', '.page-nav', '.wp-pagenavi', '.nav-links',
@@ -222,7 +217,6 @@ function analyzeSearch(doc, baseUrl, html) {
         searchPattern: null
     };
 
-    // Ищем формы поиска
     const forms = doc.querySelectorAll('form');
     forms.forEach(form => {
         const action = form.getAttribute('action') || '';
@@ -262,7 +256,6 @@ function analyzeSearch(doc, baseUrl, html) {
         }
     });
 
-    // Ищем ссылки на поиск
     const searchLinks = doc.querySelectorAll('a[href*="search"], a[href*="find"]');
     const searchLinkData = [];
     searchLinks.forEach(a => {
@@ -275,7 +268,6 @@ function analyzeSearch(doc, baseUrl, html) {
         result.searchLinks = searchLinkData.slice(0, 5);
     }
 
-    // Определяем паттерн
     if (result.forms.length > 0) {
         const form = result.forms[0];
         const searchInput = form.inputs.find(i => 
@@ -292,8 +284,7 @@ function analyzeSearch(doc, baseUrl, html) {
         }
     }
 
-    // Поиск в JavaScript (иногда URL поиска в JS)
-    const jsSearchPatterns = html.match(/['"]([^'"]*(?:search|find)[^'"]*)['"]/gi);
+    const jsSearchPatterns = html.match(/['""]([^'"]*(?:search|find)[^'"]*)['""]/gi);
     if (jsSearchPatterns) {
         result.jsSearchHints = uniqueArray(
             jsSearchPatterns.map(s => s.replace(/['"]/g, ''))
@@ -318,9 +309,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         }
     };
 
-    // --- Сортировка ---
-    
-    // Ищем элементы сортировки
     const sortSelectors = [
         'select[name*="sort"]', 'select[name*="order"]',
         '[class*="sort"] a', '[class*="sort"] select',
@@ -360,7 +348,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         } catch(e) {}
     }
 
-    // Если не нашли через селекторы, ищем по ссылкам
     if (!result.sorting.found) {
         const allLinks = doc.querySelectorAll('a[href]');
         const sortPatterns = /(sort|order|popular|rating|newest|latest|longest|viewed|top)/i;
@@ -383,7 +370,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         });
     }
 
-    // Дедупликация
     const seen = new Set();
     result.sorting.options = result.sorting.options.filter(o => {
         const key = o.label + '|' + (o.url || o.value);
@@ -392,7 +378,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         return true;
     }).slice(0, 20);
 
-    // Определяем URL-паттерн сортировки
     if (result.sorting.options.length > 0) {
         const sampleUrl = result.sorting.options.find(o => o.url)?.url;
         if (sampleUrl) {
@@ -406,8 +391,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         }
     }
 
-    // --- Категории ---
-    
     const categorySelectors = [
         '.categories a', '.category-list a', '.cats a',
         'nav.categories a', '.cat-list a', '.tags a',
@@ -424,7 +407,7 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
     for (const sel of categorySelectors) {
         try {
             const links = doc.querySelectorAll(sel);
-            if (links.length >= 3) { // Минимум 3 ссылки — вероятно категории
+            if (links.length >= 3) {
                 catSelector = sel;
                 links.forEach(a => {
                     const href = a.getAttribute('href');
@@ -441,7 +424,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         } catch(e) {}
     }
 
-    // Если через селекторы не нашли, ищем по URL паттернам
     if (categoryLinks.length === 0) {
         const allLinks = doc.querySelectorAll('a[href]');
         const catPatterns = /\/(categories|category|cat|tags|tag|genre|genres)\//i;
@@ -464,7 +446,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
     if (categoryLinks.length > 0) {
         result.categories.found = true;
         
-        // Дедупликация
         const seenCats = new Set();
         result.categories.list = categoryLinks.filter(c => {
             const key = c.url;
@@ -476,7 +457,6 @@ function analyzeSortingAndCategories(doc, baseUrl, html) {
         result.categories.selector = catSelector;
         result.categories.totalCount = result.categories.list.length;
         
-        // URL паттерн
         if (result.categories.list.length > 0) {
             const sampleCatUrl = result.categories.list[0].url;
             const urlPath = new URL(sampleCatUrl).pathname;
@@ -503,19 +483,13 @@ function analyzeVideoCards(doc, baseUrl) {
         sampleCards: []
     };
 
-    // Попытки найти контейнер карточек
     const cardSelectors = [
-        // Специфические
         '.video-item', '.video-card', '.thumb-item', '.thumb',
         '.video-thumb', '.video_block', '.video-block',
         '.item', '.video', '.clip', '.gallery-item',
-        // Общие с вложенными изображениями
         'article', '.post', '.entry',
-        // Список-элементы
         '.list-item', '.grid-item',
-        // Попытка по data-атрибутам
         '[data-video-id]', '[data-id]',
-        // Общие обёртки
         '.col', '.card'
     ];
 
@@ -525,7 +499,6 @@ function analyzeVideoCards(doc, baseUrl) {
     for (const sel of cardSelectors) {
         try {
             const found = doc.querySelectorAll(sel);
-            // Проверяем что это реально карточки (имеют img и a)
             if (found.length >= 2) {
                 const hasLinks = Array.from(found).some(el => el.querySelector('a[href]'));
                 const hasImages = Array.from(found).some(el => el.querySelector('img'));
@@ -538,7 +511,6 @@ function analyzeVideoCards(doc, baseUrl) {
         } catch(e) {}
     }
 
-    // Фоллбэк: ищем все блоки с img + a внутри
     if (cards.length === 0) {
         const allDivs = doc.querySelectorAll('div, li, article, section');
         const potential = [];
@@ -546,7 +518,6 @@ function analyzeVideoCards(doc, baseUrl) {
             const imgs = div.querySelectorAll(':scope > img, :scope > a > img, :scope > div > img, :scope > a > div > img');
             const links = div.querySelectorAll(':scope > a[href]');
             if (imgs.length >= 1 && links.length >= 1) {
-                // Проверяем что это не слишком большой контейнер
                 if (div.querySelectorAll('a[href]').length < 10) {
                     potential.push(div);
                 }
@@ -565,10 +536,10 @@ function analyzeVideoCards(doc, baseUrl) {
     result.cardSelector = usedSelector;
     result.totalCardsFound = cards.length;
 
-    // Анализируем структуру первых карточек
-    const sampleSize = Math.min(5, cards.length);
+    // *** ИЗМЕНЕНИЕ: анализируем ВСЕ карточки (для вкладки эмуляции) ***
+    const analyzeCount = cards.length;
     
-    for (let i = 0; i < sampleSize; i++) {
+    for (let i = 0; i < analyzeCount; i++) {
         const card = cards[i];
         const cardData = {};
 
@@ -588,8 +559,7 @@ function analyzeVideoCards(doc, baseUrl) {
                     if (text.length > 2 && text.length < 300) {
                         cardData.title = text;
                         if (i === 0) {
-                            result.structure.title.selector = 
-                                `${usedSelector} ${ts}`;
+                            result.structure.title.selector = `${usedSelector} ${ts}`;
                             result.structure.title.tag = titleEl.tagName.toLowerCase();
                             result.structure.title.classes = titleEl.className;
                         }
@@ -599,12 +569,11 @@ function analyzeVideoCards(doc, baseUrl) {
             } catch(e) {}
         }
 
-        // Фоллбэк: title из атрибута
         if (!cardData.title) {
             const aWithTitle = card.querySelector('a[title]');
             if (aWithTitle) {
                 cardData.title = aWithTitle.getAttribute('title');
-                if (sampleSize === 0) {
+                if (i === 0) {
                     result.structure.title.selector = `${usedSelector} a[title]`;
                     result.structure.title.attribute = 'title';
                 }
@@ -620,10 +589,8 @@ function analyzeVideoCards(doc, baseUrl) {
                 result.structure.link.selector = `${usedSelector} a[href]`;
                 result.structure.link.example = cardData.link;
                 
-                // Определяем паттерн URL видео
                 try {
                     const path = new URL(cardData.link).pathname;
-                    // Заменяем числовые ID и slug на плейсхолдеры
                     const pattern = path
                         .replace(/\/\d+\//g, '/{id}/')
                         .replace(/\/\d+$/g, '/{id}')
@@ -694,7 +661,6 @@ function analyzeVideoCards(doc, baseUrl) {
             } catch(e) {}
         }
 
-        // Фоллбэк для длительности — ищем текст по регулярке
         if (!cardData.duration) {
             const allSpans = card.querySelectorAll('span, div, p, small, em');
             for (const el of allSpans) {
@@ -737,7 +703,6 @@ function analyzeVideoCards(doc, baseUrl) {
             } catch(e) {}
         }
 
-        // Фоллбэк — ищем текст HD/4K в карточке
         if (!cardData.quality) {
             const allEls = card.querySelectorAll('span, div, i, em, strong, b, small');
             for (const el of allEls) {
@@ -756,7 +721,6 @@ function analyzeVideoCards(doc, baseUrl) {
         result.sampleCards.push(cardData);
     }
 
-    // Назначаем примеры если нашлись
     if (result.sampleCards.length > 0 && !result.structure.title.example) {
         result.structure.title.example = result.sampleCards[0].title || null;
     }
@@ -764,7 +728,7 @@ function analyzeVideoCards(doc, baseUrl) {
     return result;
 }
 
-// 6) Страница видео (плеер) — анализ одной страницы видео
+// 6) Страница видео (плеер)
 async function analyzeVideoPage(videoUrl, baseUrl) {
     const result = {
         analyzed: false,
@@ -806,6 +770,11 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
                 .replace(/\/[a-z0-9_-]{10,}\/?$/i, '/{slug}/');
         } catch(e) {}
 
+        // --- Заголовок страницы видео ---
+        result.pageTitle = doc.title || null;
+        const h1 = doc.querySelector('h1');
+        if (h1) result.videoTitle = h1.textContent.trim();
+
         // --- Источники видео ---
 
         // Метод 1: тег <video> и <source>
@@ -836,13 +805,9 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
 
         const scripts = doc.querySelectorAll('script');
         const allScriptText = Array.from(scripts).map(s => s.textContent).join('\n');
-        
-        // Также проверяем inline обработчики и атрибуты
-        const fullHTML = html;
 
         for (const pattern of scriptPatterns) {
             let match;
-            // Проверяем в scripts
             while ((match = pattern.exec(allScriptText)) !== null) {
                 const url = match[1] || match[0];
                 if (url && (url.includes('.mp4') || url.includes('.m3u8') || url.includes('.webm'))) {
@@ -882,7 +847,7 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
             }
         });
 
-        // Метод 4: iframe (часто плеер в iframe)
+        // Метод 4: iframe
         const iframes = doc.querySelectorAll('iframe[src]');
         const playerIframes = [];
         iframes.forEach(iframe => {
@@ -903,7 +868,7 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
             }
         }
 
-        // Дедупликация источников
+        // Дедупликация
         const seenSources = new Set();
         result.videoSources.sources = result.videoSources.sources.filter(s => {
             if (seenSources.has(s.url)) return false;
@@ -913,7 +878,7 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
         
         result.videoSources.methods = uniqueArray(result.videoSources.methods);
 
-        // Поиск переменных JS с конфигурацией плеера
+        // Player configs
         const playerConfigPatterns = [
             /(?:var|let|const|window\.)\s*(\w*(?:player|video|config|settings|flashvars)\w*)\s*=\s*({[\s\S]*?});/gi,
             /(?:playerInstance|jwplayer|flowplayer|videojs)\s*[\.(]\s*['"]*[^'"]*['"]*\s*[\).]\s*(?:setup|source|src)\s*\(\s*({[\s\S]*?})\s*\)/gi
@@ -953,7 +918,6 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
                         result.relatedVideos.count = relatedLinks.length;
                         result.relatedVideos.containerHTML = el.outerHTML.substring(0, 500);
                         
-                        // Пример ссылок
                         result.relatedVideos.sampleLinks = Array.from(relatedLinks)
                             .slice(0, 5)
                             .map(a => ({
@@ -973,7 +937,7 @@ async function analyzeVideoPage(videoUrl, baseUrl) {
     return result;
 }
 
-// 7) Общая мета-информация о сайте
+// 7) Общая мета-информация
 function analyzeMeta(doc, html) {
     const meta = {
         title: doc.title || null,
@@ -1023,7 +987,6 @@ async function runFullAnalysis() {
         return;
     }
 
-    // Валидация URL
     try {
         new URL(targetUrl);
     } catch {
@@ -1046,12 +1009,11 @@ async function runFullAnalysis() {
             analyzedUrl: targetUrl,
             baseUrl: baseUrl,
             analyzedAt: new Date().toISOString(),
-            tool: 'Site Structure Analyzer v1.0'
+            tool: 'Site Structure Analyzer v1.1'
         }
     };
 
     try {
-        // Шаг 1: Загрузка главной страницы
         setStatus('📥 Загрузка главной страницы...', 'loading');
         setProgress(10, 'Загрузка страницы...');
         
@@ -1061,31 +1023,24 @@ async function runFullAnalysis() {
         setProgress(20, 'Страница загружена');
         setStatus(`✅ Страница загружена (${(html.length / 1024).toFixed(1)} KB)`, 'success');
 
-        // Шаг 2: Кодировка
         setProgress(25, 'Анализ кодировки...');
         analysisResult.encoding = analyzeEncoding(doc, html);
 
-        // Шаг 3: Мета-информация
         setProgress(30, 'Мета-информация...');
         analysisResult.siteMetaInfo = analyzeMeta(doc, html);
 
-        // Шаг 4: Пагинация
         setProgress(40, 'Анализ пагинации...');
         analysisResult.mainPageAndPagination = analyzePagination(doc, baseUrl, targetUrl);
 
-        // Шаг 5: Поиск
         setProgress(50, 'Анализ поиска...');
         analysisResult.search = analyzeSearch(doc, baseUrl, html);
 
-        // Шаг 6: Сортировка и категории
         setProgress(60, 'Сортировка и категории...');
         analysisResult.sortingAndCategories = analyzeSortingAndCategories(doc, baseUrl, html);
 
-        // Шаг 7: Карточки видео
         setProgress(70, 'Анализ карточек видео...');
         analysisResult.videoCards = analyzeVideoCards(doc, baseUrl);
 
-        // Шаг 8: Анализ страницы видео (берём первую найденную ссылку)
         setProgress(80, 'Анализ страницы видео...');
         
         let sampleVideoUrl = null;
@@ -1104,7 +1059,6 @@ async function runFullAnalysis() {
 
         setProgress(95, 'Формирование отчёта...');
 
-        // Итоговая сводка
         analysisResult._summary = {
             encoding: analysisResult.encoding.charset,
             hasPagination: analysisResult.mainPageAndPagination.pagination.found,
@@ -1122,7 +1076,6 @@ async function runFullAnalysis() {
             hasRelatedVideos: analysisResult.videoPage.relatedVideos?.found || false
         };
 
-        // Отображаем результат
         displayResults(analysisResult);
         setProgress(100, 'Готово!');
         setStatus('✅ Анализ завершён успешно!', 'success');
@@ -1152,7 +1105,7 @@ function displayResults(data) {
     const resultsDiv = document.getElementById('results');
     resultsDiv.style.display = 'block';
 
-    // Форматированный JSON с подсветкой
+    // Форматированный JSON
     const jsonStr = JSON.stringify(data, null, 2);
     document.getElementById('jsonFormatted').innerHTML = syntaxHighlight(jsonStr);
     
@@ -1162,27 +1115,385 @@ function displayResults(data) {
     // Визуальный отчёт
     document.getElementById('visualReport').innerHTML = generateVisualReport(data);
 
+    // ===== НОВОЕ: Эмуляция карточек =====
+    renderEmulatedCards(data);
+
+    // ===== НОВОЕ: Эмуляция видео =====
+    renderEmulatedVideo(data);
+
     // Активируем кнопки
     document.getElementById('btnCopy').disabled = false;
     document.getElementById('btnDownload').disabled = false;
 }
+
+// ================================================================
+// ЭМУЛЯЦИЯ КАРТОЧЕК (НОВАЯ ВКЛАДКА)
+// ================================================================
+
+function renderEmulatedCards(data) {
+    const container = document.getElementById('emulatedCards');
+    const emptyState = document.getElementById('cardsEmptyState');
+    const cheatsheet = document.getElementById('cardsSelectorCheatsheet');
+    const countInfo = document.getElementById('cardsCountInfo');
+
+    container.innerHTML = '';
+
+    if (!data.videoCards || !data.videoCards.found || !data.videoCards.sampleCards.length) {
+        container.style.display = 'none';
+        emptyState.style.display = 'block';
+        cheatsheet.style.display = 'none';
+        countInfo.textContent = '';
+        return;
+    }
+
+    container.style.display = '';
+    emptyState.style.display = 'none';
+
+    const cards = data.videoCards.sampleCards;
+    countInfo.textContent = `Найдено: ${cards.length} карточек (селектор: ${data.videoCards.cardSelector})`;
+
+    cards.forEach((card, index) => {
+        const cardEl = document.createElement('div');
+        cardEl.className = 'emu-card';
+
+        // Номер
+        const numberHtml = `<div class="emu-card-number">#${index + 1}</div>`;
+
+        // Превью
+        let thumbHtml = '';
+        if (card.thumbnail) {
+            thumbHtml = `
+                <div class="emu-card-thumb">
+                    ${numberHtml}
+                    <img src="${escapeHtml(card.thumbnail)}" 
+                         alt="${escapeHtml(card.title || '')}" 
+                         loading="lazy"
+                         onerror="this.parentElement.innerHTML='${numberHtml}<div class=\\'thumb-placeholder\\'>🖼️<br><small style=\\'font-size:11px;color:#555\\'>Ошибка загрузки</small></div>'">
+                    <div class="emu-card-badges">
+                        ${card.duration ? `<span class="emu-badge emu-badge-duration">${escapeHtml(card.duration)}</span>` : ''}
+                        ${card.quality ? `<span class="emu-badge emu-badge-quality">${escapeHtml(card.quality)}</span>` : ''}
+                    </div>
+                </div>`;
+        } else {
+            thumbHtml = `
+                <div class="emu-card-thumb">
+                    ${numberHtml}
+                    <div class="thumb-placeholder">🎬</div>
+                    <div class="emu-card-badges">
+                        ${card.duration ? `<span class="emu-badge emu-badge-duration">${escapeHtml(card.duration)}</span>` : ''}
+                        ${card.quality ? `<span class="emu-badge emu-badge-quality">${escapeHtml(card.quality)}</span>` : ''}
+                    </div>
+                </div>`;
+        }
+
+        // Инфо
+        let infoHtml = '<div class="emu-card-info">';
+        
+        if (card.title) {
+            infoHtml += `<div class="emu-card-title" title="${escapeHtml(card.title)}">${escapeHtml(card.title)}</div>`;
+        } else {
+            infoHtml += `<div class="emu-card-title" style="color:#555;font-style:italic;">Без названия</div>`;
+        }
+
+        if (card.link) {
+            infoHtml += `<a class="emu-card-link" href="${escapeHtml(card.link)}" target="_blank" rel="noopener">${escapeHtml(card.link)}</a>`;
+        }
+
+        // Мета-данные
+        const metaParts = [];
+        if (card.duration) metaParts.push(`<span class="emu-card-meta-item">⏱ ${escapeHtml(card.duration)}</span>`);
+        if (card.quality) metaParts.push(`<span class="emu-card-meta-item">📺 ${escapeHtml(card.quality)}</span>`);
+        if (card.thumbnail) metaParts.push(`<span class="emu-card-meta-item">🖼 Есть превью</span>`);
+        
+        if (metaParts.length) {
+            infoHtml += `<div class="emu-card-meta">${metaParts.join('')}</div>`;
+        }
+
+        infoHtml += '</div>';
+
+        cardEl.innerHTML = thumbHtml + infoHtml;
+        container.appendChild(cardEl);
+    });
+
+    // ---- Шпаргалка по селекторам ----
+    const struct = data.videoCards.structure;
+    const hasAnySelector = struct.title.selector || struct.link.selector || 
+                           struct.thumbnail.selector || struct.duration.selector || 
+                           struct.quality.selector;
+    
+    if (hasAnySelector) {
+        cheatsheet.style.display = 'block';
+        let cheatHtml = '';
+
+        const rows = [
+            { label: '📦 Карточка', value: data.videoCards.cardSelector },
+            { label: '📌 Название', value: struct.title.selector, extra: struct.title.tag ? `тег: <${struct.title.tag}>` : '' },
+            { label: '🔗 Ссылка', value: struct.link.selector, extra: struct.link.pattern ? `паттерн: ${struct.link.pattern}` : '' },
+            { label: '🖼 Превью', value: struct.thumbnail.selector, extra: struct.thumbnail.attribute ? `атрибут: ${struct.thumbnail.attribute}` : '' },
+            { label: '⏱ Длительность', value: struct.duration.selector, extra: struct.duration.tag ? `тег: <${struct.duration.tag}>` : '' },
+            { label: '📺 Качество', value: struct.quality.selector }
+        ];
+
+        rows.forEach(row => {
+            if (row.value) {
+                cheatHtml += `<div class="cheatsheet-row">
+                    <span class="cheatsheet-label">${row.label}</span>
+                    <span class="cheatsheet-value">${escapeHtml(row.value)}${row.extra ? ` <span style="color:#666;font-size:11px;">(${escapeHtml(row.extra)})</span>` : ''}</span>
+                </div>`;
+            }
+        });
+
+        document.getElementById('cheatsheetContent').innerHTML = cheatHtml;
+    } else {
+        cheatsheet.style.display = 'none';
+    }
+}
+
+function setCardView(view, btn) {
+    const container = document.getElementById('emulatedCards');
+    
+    if (view === 'list') {
+        container.classList.add('list-view');
+    } else {
+        container.classList.remove('list-view');
+    }
+
+    document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+}
+
+// ================================================================
+// ЭМУЛЯЦИЯ ВИДЕО-СТРАНИЦЫ (НОВАЯ ВКЛАДКА)
+// ================================================================
+
+function renderEmulatedVideo(data) {
+    const container = document.getElementById('emulatedVideo');
+    const emptyState = document.getElementById('videoEmptyState');
+
+    container.innerHTML = '';
+
+    if (!data.videoPage || !data.videoPage.analyzed) {
+        container.style.display = 'none';
+        emptyState.style.display = 'block';
+        return;
+    }
+
+    container.style.display = '';
+    emptyState.style.display = 'none';
+
+    const vp = data.videoPage;
+    let html = '<div class="emu-video-page">';
+
+    // ---- Заголовок видео ----
+    const videoTitle = vp.videoTitle || vp.pageTitle || 'Без названия';
+    html += `<h3 style="color:#ddd; margin-bottom:15px; font-size:1.2em;">${escapeHtml(videoTitle)}</h3>`;
+
+    // ---- Плеер ----
+    html += '<div class="emu-player-container">';
+    
+    let playerRendered = false;
+
+    // Пытаемся встроить реальный плеер
+    if (vp.videoSources && vp.videoSources.found && vp.videoSources.sources.length > 0) {
+        // Ищем MP4 для нативного плеера
+        const mp4Source = vp.videoSources.sources.find(s => s.type === 'MP4');
+        const hlsSource = vp.videoSources.sources.find(s => s.type === 'HLS (m3u8)');
+        
+        if (mp4Source) {
+            html += `<video controls preload="metadata" poster="">
+                <source src="${escapeHtml(mp4Source.url)}" type="video/mp4">
+                Ваш браузер не поддерживает видео.
+            </video>`;
+            playerRendered = true;
+        } else if (hlsSource) {
+            // HLS — показываем плейсхолдер с инфо
+            html += `<div class="emu-player-placeholder">
+                <span class="play-icon">📡</span>
+                <p>HLS Stream (m3u8)</p>
+                <p style="font-size:12px; color:#555; margin-top:5px;">Для воспроизведения HLS нужен hls.js или VLC</p>
+                <code style="font-size:11px; color:#44dd44; margin-top:10px; word-break:break-all; padding:0 20px; text-align:center;">${escapeHtml(hlsSource.url.substring(0, 120))}...</code>
+            </div>`;
+            playerRendered = true;
+        }
+    }
+    
+    // Если есть iframe плеер
+    if (!playerRendered && vp.videoSources && vp.videoSources.playerIframes && vp.videoSources.playerIframes.length > 0) {
+        const iframe = vp.videoSources.playerIframes[0];
+        html += `<iframe src="${escapeHtml(iframe.src)}" allowfullscreen></iframe>`;
+        playerRendered = true;
+    }
+
+    // Если ничего не нашли
+    if (!playerRendered) {
+        html += `<div class="emu-player-placeholder">
+            <span class="play-icon">▶️</span>
+            <p>Прямой источник видео не обнаружен</p>
+            <p style="font-size:12px; color:#555; margin-top:5px;">Видео может быть зашифровано или загружаться динамически</p>
+        </div>`;
+    }
+
+    html += '</div>'; // /emu-player-container
+
+    // ---- Мета-информация видео ----
+    html += '<dl class="emu-video-meta">';
+    
+    html += `<dt>URL страницы:</dt>
+             <dd><a href="${escapeHtml(vp.videoUrl)}" target="_blank" style="color:#4488cc;">${escapeHtml(vp.videoUrl)}</a></dd>`;
+    
+    if (vp.urlStructure && vp.urlStructure.pattern) {
+        html += `<dt>URL паттерн:</dt>
+                 <dd style="color:#ffaa44;">${escapeHtml(vp.urlStructure.pattern)}</dd>`;
+    }
+
+    if (vp.videoSources) {
+        html += `<dt>Источники найдены:</dt>
+                 <dd>${vp.videoSources.found ? 
+                    `<span style="color:#44dd44;">✅ Да (${vp.videoSources.sources.length} шт.)</span>` : 
+                    `<span style="color:#ff4444;">❌ Нет</span>`}</dd>`;
+        
+        if (vp.videoSources.methods && vp.videoSources.methods.length > 0) {
+            html += `<dt>Методы обнаружения:</dt>
+                     <dd>${vp.videoSources.methods.map(m => `<span class="tag">${escapeHtml(m)}</span>`).join(' ')}</dd>`;
+        }
+    }
+
+    if (vp.relatedVideos) {
+        html += `<dt>Похожие видео:</dt>
+                 <dd>${vp.relatedVideos.found ? 
+                    `<span style="color:#44dd44;">✅ ${vp.relatedVideos.count} шт. (${escapeHtml(vp.relatedVideos.selector)})</span>` :
+                    `<span style="color:#888;">Не найдены</span>`}</dd>`;
+    }
+
+    html += '</dl>';
+
+    // ---- Список источников видео ----
+    if (vp.videoSources && vp.videoSources.sources.length > 0) {
+        html += '<div class="emu-video-sources">';
+        html += '<h4>📡 Обнаруженные источники видео</h4>';
+
+        vp.videoSources.sources.forEach((source, idx) => {
+            const typeClass = source.type.includes('HLS') ? 'hls' :
+                            source.type === 'MP4' ? 'mp4' :
+                            source.type === 'WebM' ? 'webm' : 'unknown';
+            
+            html += `<div class="emu-source-item">
+                <span class="emu-source-type ${typeClass}">${escapeHtml(source.type)}</span>
+                <span class="emu-source-url">${escapeHtml(source.url)}</span>
+                <span class="emu-source-found-in">via: ${escapeHtml(source.foundIn)}</span>
+                <div class="emu-source-actions">
+                    <button class="emu-source-btn" onclick="copyToClipboard('${escapeHtml(source.url).replace(/'/g, "\\'")}')">📋 Копировать</button>
+                    <a class="emu-source-btn" href="${escapeHtml(source.url)}" target="_blank" style="text-decoration:none;">🔗 Открыть</a>
+                </div>
+            </div>`;
+        });
+
+        html += '</div>';
+    }
+
+    // ---- iframe плееры ----
+    if (vp.videoSources && vp.videoSources.playerIframes && vp.videoSources.playerIframes.length > 0) {
+        html += '<div class="emu-iframes-section">';
+        html += '<h4>🪟 Обнаруженные iframe-плееры</h4>';
+
+        vp.videoSources.playerIframes.forEach((iframe, idx) => {
+            html += `<div class="emu-source-item">
+                <span class="emu-source-type iframe">iframe</span>
+                <span class="emu-source-url">${escapeHtml(iframe.src)}</span>
+                <span class="emu-source-found-in">${iframe.width ? iframe.width + 'x' + iframe.height : ''}</span>
+                <div class="emu-source-actions">
+                    <button class="emu-source-btn" onclick="copyToClipboard('${escapeHtml(iframe.src).replace(/'/g, "\\'")}')">📋</button>
+                    <a class="emu-source-btn" href="${escapeHtml(iframe.src)}" target="_blank" style="text-decoration:none;">🔗</a>
+                </div>
+            </div>`;
+        });
+
+        html += '</div>';
+    }
+
+    // ---- Конфиги плеера (JS сниппеты) ----
+    if (vp.videoSources && vp.videoSources.playerConfigSnippets && vp.videoSources.playerConfigSnippets.length > 0) {
+        html += '<div class="emu-config-snippets">';
+        html += '<h4>🔧 Обнаруженные JS-конфиги плеера</h4>';
+
+        vp.videoSources.playerConfigSnippets.forEach((snippet, idx) => {
+            html += `<div class="emu-config-snippet">${escapeHtml(snippet)}</div>`;
+        });
+
+        html += '</div>';
+    }
+
+    // ---- Note ----
+    if (vp.videoSources && vp.videoSources.note) {
+        html += `<div style="margin-top:15px; padding:12px; background:#2a2a1e; border:1px solid #555522; border-radius:8px; color:#ffaa44; font-size:13px;">
+            ⚠️ ${escapeHtml(vp.videoSources.note)}
+        </div>`;
+    }
+
+    // ---- Похожие видео ----
+    if (vp.relatedVideos && vp.relatedVideos.found && vp.relatedVideos.sampleLinks) {
+        html += '<div class="emu-related">';
+        html += `<h4>🔄 Похожие видео <span style="color:#666;font-size:12px;">(${vp.relatedVideos.count} найдено, показаны первые ${vp.relatedVideos.sampleLinks.length})</span></h4>`;
+        html += '<div class="emu-related-grid">';
+
+        vp.relatedVideos.sampleLinks.forEach(link => {
+            html += `<div class="emu-related-item">
+                ${link.text ? `<div class="related-text">${escapeHtml(link.text)}</div>` : ''}
+                <a href="${escapeHtml(link.href)}" target="_blank">${escapeHtml(link.href.substring(0, 60))}...</a>
+            </div>`;
+        });
+
+        html += '</div></div>';
+    }
+
+    // ---- Ошибка ----
+    if (vp.error) {
+        html += `<div style="margin-top:15px; padding:12px; background:#3e1a1a; border:1px solid #553333; border-radius:8px; color:#ff4444; font-size:13px;">
+            ❌ ${escapeHtml(vp.error)}
+        </div>`;
+    }
+
+    html += '</div>'; // /emu-video-page
+
+    container.innerHTML = html;
+}
+
+// Утилита копирования в буфер
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        setStatus('📋 Скопировано в буфер обмена!', 'success');
+    }).catch(() => {
+        // Фоллбэк
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        setStatus('📋 Скопировано!', 'success');
+    });
+}
+
+// ================================================================
+// ВИЗУАЛЬНЫЙ ОТЧЁТ (оригинальный, без изменений)
+// ================================================================
 
 function syntaxHighlight(json) {
     json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return json.replace(
         /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
         function (match) {
-            let cls = 'color: #ae81ff;'; // number
+            let cls = 'color: #ae81ff;';
             if (/^"/.test(match)) {
                 if (/:$/.test(match)) {
-                    cls = 'color: #a6e22e;'; // key
+                    cls = 'color: #a6e22e;';
                 } else {
-                    cls = 'color: #e6db74;'; // string
+                    cls = 'color: #e6db74;';
                 }
             } else if (/true|false/.test(match)) {
-                cls = 'color: #66d9ef;'; // boolean
+                cls = 'color: #66d9ef;';
             } else if (/null/.test(match)) {
-                cls = 'color: #f92672;'; // null
+                cls = 'color: #f92672;';
             }
             return '<span style="' + cls + '">' + match + '</span>';
         }
@@ -1241,7 +1552,7 @@ function generateVisualReport(data) {
         </div>
     </div>`;
 
-    // Карточки видео
+    // Карточки
     if (data.videoCards.found) {
         html += `<div class="report-section">
             <div class="report-section-header">🎬 Структура карточки видео</div>
@@ -1285,13 +1596,15 @@ function generateVisualReport(data) {
 
         html += `</div></div>`;
 
-        // Примеры карточек
+        // Примеры (только первые 5 в визуальном отчёте)
         if (data.videoCards.sampleCards.length > 0) {
+            const showCount = Math.min(5, data.videoCards.sampleCards.length);
             html += `<div class="report-section">
-                <div class="report-section-header">📑 Примеры карточек (${data.videoCards.sampleCards.length})</div>
+                <div class="report-section-header">📑 Примеры карточек (${showCount} из ${data.videoCards.sampleCards.length})</div>
                 <div class="report-section-body">`;
             
-            data.videoCards.sampleCards.forEach((card, i) => {
+            for (let i = 0; i < showCount; i++) {
+                const card = data.videoCards.sampleCards[i];
                 html += `<div style="margin-bottom:15px; padding:10px; background:#0f0f23; border-radius:8px;">
                     <strong style="color:#00d4ff;">#${i+1}</strong><br>`;
                 if (card.title) html += `📌 <strong>Название:</strong> ${escapeHtml(card.title)}<br>`;
@@ -1300,7 +1613,7 @@ function generateVisualReport(data) {
                 if (card.duration) html += `⏱ <strong>Длительность:</strong> ${card.duration}<br>`;
                 if (card.quality) html += `📺 <strong>Качество:</strong> ${card.quality}<br>`;
                 html += `</div>`;
-            });
+            }
 
             html += `</div></div>`;
         }
@@ -1363,8 +1676,9 @@ function generateVisualReport(data) {
 }
 
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
-    div.textContent = text;
+    div.textContent = String(text);
     return div.innerHTML;
 }
 
@@ -1372,12 +1686,14 @@ function escapeHtml(text) {
 // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ UI
 // ================================================================
 
-function showTab(name) {
+function showTab(name, btnEl) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
     
     document.getElementById('tab-' + name).classList.add('active');
-    event.target.classList.add('active');
+    if (btnEl) {
+        btnEl.classList.add('active');
+    }
 }
 
 function copyResults() {
@@ -1386,7 +1702,6 @@ function copyResults() {
     navigator.clipboard.writeText(json).then(() => {
         setStatus('📋 JSON скопирован в буфер обмена!', 'success');
     }).catch(() => {
-        // Фоллбэк для старых браузеров
         const textarea = document.getElementById('jsonRaw');
         textarea.select();
         document.execCommand('copy');
@@ -1422,7 +1737,6 @@ document.addEventListener('DOMContentLoaded', () => {
         urlInput.value = DEFAULT_TARGET_URL;
     }
     
-    // Enter для запуска анализа
     urlInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') {
             runFullAnalysis();
