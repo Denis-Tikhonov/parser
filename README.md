@@ -58,12 +58,15 @@ git push origin main
 **Любой статический сервер**
 
 npx serve .
+
 **или**
 
 python -m http.server 8080
+
 **или**
 
 php -S localhost:8080
+
 Откройте http://localhost:8080 в браузере.
 
 ⚠️ Открытие index.html напрямую через file:// может не работать из-за CORS-политик браузера. Используйте локальный сервер.
