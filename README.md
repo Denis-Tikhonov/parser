@@ -56,10 +56,13 @@ git push origin main
 ### Вариант 3: Локальный запуск
 
 **Любой статический сервер**
+
 npx serve .
 **или**
+
 python -m http.server 8080
 **или**
+
 php -S localhost:8080
 Откройте http://localhost:8080 в браузере.
 
