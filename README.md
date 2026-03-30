@@ -33,4 +33,33 @@
 3. Source: **Deploy from a branch**
 4. Branch: **main** / **/ (root)**
 5. Нажмите **Save**
-6. Через 1-2 минуты сайт доступен по адресу:
+6. Через 1-2 минуты сайт доступен по адресу: https://ВАШ_ЮЗЕРНЕЙМ.github.io/site-analyzer/
+7. ### Вариант 2: Ручное создание
+
+```bash
+# Клонируйте или создайте репозиторий
+git clone https://github.com/YOUR_USERNAME/site-analyzer.git
+cd site-analyzer
+
+# Скопируйте файлы (index.html, style.css, parser.js, README.md)
+# ... скопируйте файлы ...
+
+# Запушьте
+git add .
+git commit -m "Initial commit: Site Structure Analyzer"
+git push origin main
+
+Затем включите GitHub Pages (см. раздел «Настройка GitHub Pages»).
+
+Вариант 3: Локальный запуск
+
+# Любой статический сервер
+npx serve .
+# или
+python -m http.server 8080
+# или
+php -S localhost:8080
+Откройте http://localhost:8080 в браузере.
+
+⚠️ Открытие index.html напрямую через file:// может не работать из-за CORS-политик браузера. Используйте локальный сервер.
+
