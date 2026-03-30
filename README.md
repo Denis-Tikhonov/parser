@@ -33,7 +33,7 @@
 3. Source: **Deploy from a branch**
 4. Branch: **main** / **/ (root)**
 5. Нажмите **Save**
-6. Через 1-2 минуты сайт доступен по адресу: https://ВАШ_ЮЗЕРНЕЙМ.github.io/site-analyzer/
+6. Через 1-2 минуты сайт доступен по адресу: https://denis-tikhonov.github.io/site-analyzer/
 
 ### Вариант 2: Ручное создание
 
