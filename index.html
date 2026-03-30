@@ -21,7 +21,6 @@
             >
             <!-- ============================================== -->
             <!-- 👆 ВСТАВЬТЕ ВАШУ ССЫЛКУ В АТРИБУТ value ВЫШЕ  -->
-            <!-- Например: value="https://trahkino.me/video/"   -->
             <!-- ============================================== -->
         </div>
 
@@ -52,9 +51,11 @@
             <h2>📊 Результаты анализа</h2>
             
             <div class="tabs">
-                <button class="tab active" onclick="showTab('formatted')">Форматированный</button>
-                <button class="tab" onclick="showTab('raw')">Raw JSON</button>
-                <button class="tab" onclick="showTab('visual')">Визуальный</button>
+                <button class="tab active" onclick="showTab('formatted', this)">Форматированный</button>
+                <button class="tab" onclick="showTab('raw', this)">Raw JSON</button>
+                <button class="tab" onclick="showTab('visual', this)">Визуальный</button>
+                <button class="tab tab-emulate" onclick="showTab('cards', this)">🃏 Карточки</button>
+                <button class="tab tab-emulate" onclick="showTab('video', this)">▶️ Видео</button>
             </div>
 
             <div id="tab-formatted" class="tab-content active">
@@ -65,6 +66,43 @@
             </div>
             <div id="tab-visual" class="tab-content">
                 <div id="visualReport"></div>
+            </div>
+            <!-- ===== НОВАЯ ВКЛАДКА: ЭМУЛЯЦИЯ КАРТОЧЕК ===== -->
+            <div id="tab-cards" class="tab-content">
+                <div class="emulate-header">
+                    <h3>🃏 Эмуляция карточек видео</h3>
+                    <p class="emulate-subtitle">Визуализация данных, извлечённых из карточек на сайте</p>
+                    <div class="emulate-controls">
+                        <label>Вид:</label>
+                        <button class="view-btn active" onclick="setCardView('grid', this)" title="Сетка">▦</button>
+                        <button class="view-btn" onclick="setCardView('list', this)" title="Список">☰</button>
+                        <span class="emulate-info" id="cardsCountInfo"></span>
+                    </div>
+                </div>
+                <div id="emulatedCards" class="emulated-cards-grid"></div>
+                <div id="cardsEmptyState" class="empty-state" style="display:none;">
+                    <span class="empty-icon">🃏</span>
+                    <p>Карточки не найдены на странице</p>
+                    <p class="empty-hint">Убедитесь, что на анализируемой странице есть карточки контента</p>
+                </div>
+                <!-- Селекторная шпаргалка -->
+                <div id="cardsSelectorCheatsheet" class="cheatsheet" style="display:none;">
+                    <h4>📐 Шпаргалка по селекторам</h4>
+                    <div id="cheatsheetContent"></div>
+                </div>
+            </div>
+            <!-- ===== НОВАЯ ВКЛАДКА: ЭМУЛЯЦИЯ ВИДЕО ===== -->
+            <div id="tab-video" class="tab-content">
+                <div class="emulate-header">
+                    <h3>▶️ Эмуляция страницы видео</h3>
+                    <p class="emulate-subtitle">Визуализация данных страницы просмотра видео</p>
+                </div>
+                <div id="emulatedVideo"></div>
+                <div id="videoEmptyState" class="empty-state" style="display:none;">
+                    <span class="empty-icon">▶️</span>
+                    <p>Страница видео не была проанализирована</p>
+                    <p class="empty-hint">Для анализа нужна хотя бы одна ссылка на видео в карточках</p>
+                </div>
             </div>
         </div>
     </div>
