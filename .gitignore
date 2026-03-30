@@ -1,1 +1,23 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
 
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+
+# Output (если сохраняете JSON локально)
+output/
+*.json
+!package.json
+
+# Node (если добавите зависимости в будущем)
+node_modules/
