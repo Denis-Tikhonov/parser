@@ -3,103 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer</title>
+    <title>Site Structure Analyzer v3.1</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>🔍 Site Structure Analyzer</h1>
-        <p class="description">Анализ HTML-структуры сайта и вывод результата в JSON</p>
+<div class="container">
+    <h1>🔍 Site Structure Analyzer</h1>
+    <p class="description">Глубокий анализ архитектуры сайта для парсинга — JSON-отчёт</p>
 
-        <!-- ============================================================
-             БЛОК WORKER
-             ============================================================ -->
-        <div class="worker-block">
-            <div class="worker-block-header">
-                <label for="workerUrl">⚡ Cloudflare Worker (приоритетный транспорт)</label>
-                <span id="workerStatusBadge" class="worker-badge inactive">○ Worker не задан</span>
-            </div>
-            <div class="worker-input-row">
-                <input type="text" id="workerUrl"
-                       placeholder="https://zonaproxy.ИМЯ.workers.dev"
-                       autocomplete="off" spellcheck="false">
-            </div>
-            <p class="worker-hint">
-                Worker — <strong>основной транспорт</strong> (приоритет выше прокси).
-                Поддерживает <code>?mode=extract</code> для прямых видео-ссылок.
-                URL сохраняется в браузере автоматически.
-            </p>
+    <!-- Worker -->
+    <div class="worker-block">
+        <div class="worker-block-header">
+            <label for="workerUrl">⚡ Cloudflare Worker</label>
+            <span id="workerStatusBadge" class="worker-badge inactive">○ не задан</span>
         </div>
-
-        <!-- ============================================================
-             URL ДЛЯ АНАЛИЗА
-             ============================================================ -->
-        <div class="input-group">
-            <label for="targetUrl">URL для анализа:</label>
-            <input type="text" id="targetUrl"
-                   placeholder="https://example.com/video/" value="">
+        <div class="worker-input-row">
+            <input type="text" id="workerUrl" placeholder="https://myproxy.workers.dev" autocomplete="off" spellcheck="false">
         </div>
-
-        <!-- ============================================================
-             РЕЖИМ ДОСТУПА
-             ============================================================ -->
-        <div class="input-group">
-            <label for="proxySelect">Режим доступа:</label>
-            <select id="proxySelect">
-                <option value="auto" selected>🔄 Авто (прямой → Worker → прокси)</option>
-                <option value="">🔗 Без прокси (прямой запрос)</option>
-                <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
-                <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
-                <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
-                <option value="https://thingproxy.freeboard.io/fetch/">🌐 thingproxy.freeboard.io</option>
-                <option value="https://cors-anywhere.herokuapp.com/">🌐 cors-anywhere.herokuapp.com</option>
-                <option value="https://cors.bridged.cc/">🌐 cors.bridged.cc</option>
-            </select>
-            <p id="proxyHint" class="proxy-hint"></p>
-        </div>
-
-        <!-- ============================================================
-             КНОПКИ
-             ============================================================ -->
-        <div class="buttons">
-            <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
-            <button id="btnCopy" onclick="copyResults()" disabled>📋 Копировать JSON</button>
-            <button id="btnDownload" onclick="downloadResults()" disabled>💾 Скачать JSON</button>
-        </div>
-
-        <div id="corsIndicator" class="cors-indicator" style="display:none;"></div>
-        <div id="status" class="status"></div>
-        <div id="progress-container" class="progress-container" style="display:none;">
-            <div id="progress-bar" class="progress-bar"></div>
-            <span id="progress-text" class="progress-text">0%</span>
-        </div>
-
-        <!-- ============================================================
-             РЕЗУЛЬТАТЫ
-             ============================================================ -->
-        <div id="results" class="results" style="display:none;">
-            <h2>📊 Результаты анализа</h2>
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
-                <button class="tab" onclick="showTab('formatted')">Форматированный</button>
-                <button class="tab" onclick="showTab('raw')">Raw JSON</button>
-                <button class="tab" onclick="showTab('visual')">Визуальный</button>
-            </div>
-
-            <div id="tab-arch" class="tab-content active">
-                <div id="archReport"></div>
-            </div>
-            <div id="tab-formatted" class="tab-content">
-                <pre id="jsonFormatted"></pre>
-            </div>
-            <div id="tab-raw" class="tab-content">
-                <textarea id="jsonRaw" readonly></textarea>
-            </div>
-            <div id="tab-visual" class="tab-content">
-                <div id="visualReport"></div>
-            </div>
-        </div>
+        <p class="worker-hint">Приоритетный транспорт. Поддерживает <code>?mode=extract</code>. Сохраняется в localStorage.</p>
     </div>
-    <script src="parser.js"></script>
+
+    <!-- URL -->
+    <div class="input-group">
+        <label for="targetUrl">URL для анализа:</label>
+        <input type="text" id="targetUrl" placeholder="https://example.com/video/" value="">
+    </div>
+
+    <!-- Прокси -->
+    <div class="input-group">
+        <label for="proxySelect">Режим доступа:</label>
+        <select id="proxySelect">
+            <option value="auto" selected>🔄 Авто (прямой → Worker → прокси)</option>
+            <option value="">🔗 Прямой (без прокси)</option>
+            <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
+            <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
+            <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
+            <option value="https://thingproxy.freeboard.io/fetch/">🌐 thingproxy</option>
+            <option value="https://cors-anywhere.herokuapp.com/">🌐 cors-anywhere</option>
+            <option value="https://cors.bridged.cc/">🌐 cors.bridged</option>
+        </select>
+        <p id="proxyHint" class="proxy-hint"></p>
+    </div>
+
+    <!-- User-Agent -->
+    <div class="input-group">
+        <label for="uaSelect">User-Agent:</label>
+        <select id="uaSelect">
+            <option value="desktop" selected>🖥 Desktop Chrome</option>
+            <option value="mobile">📱 Mobile Chrome</option>
+            <option value="bot">🤖 Googlebot</option>
+            <option value="custom">✏️ Свой (ввести ниже)</option>
+        </select>
+        <input type="text" id="uaCustom" class="ua-custom-input" placeholder="Mozilla/5.0 ..." style="display:none;">
+    </div>
+
+    <!-- Кнопки -->
+    <div class="buttons">
+        <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
+        <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
+        <button id="btnCopyArch" onclick="copyArchitecture()" disabled>🏗️ Архитектура</button>
+    </div>
+
+    <div id="corsIndicator" class="cors-indicator" style="display:none;"></div>
+    <div id="status" class="status"></div>
+    <div id="progress-container" class="progress-container" style="display:none;">
+        <div id="progress-bar" class="progress-bar"></div>
+        <span id="progress-text" class="progress-text">0%</span>
+    </div>
+
+    <!-- Результаты -->
+    <div id="results" class="results" style="display:none;">
+        <h2>📊 Результаты</h2>
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
+            <button class="tab" onclick="showTab('formatted')">JSON</button>
+            <button class="tab" onclick="showTab('raw')">Raw</button>
+            <button class="tab" onclick="showTab('visual')">Визуальный</button>
+        </div>
+        <div id="tab-arch" class="tab-content active"><div id="archReport"></div></div>
+        <div id="tab-formatted" class="tab-content"><pre id="jsonFormatted"></pre></div>
+        <div id="tab-raw" class="tab-content"><textarea id="jsonRaw" readonly></textarea></div>
+        <div id="tab-visual" class="tab-content"><div id="visualReport"></div></div>
+    </div>
+</div>
+<script src="parser.js"></script>
 </body>
 </html>
