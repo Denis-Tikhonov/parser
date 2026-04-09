@@ -21,17 +21,22 @@
             >
             <!-- ============================================== -->
             <!-- 👆 ВСТАВЬТЕ ВАШУ ССЫЛКУ В АТРИБУТ value ВЫШЕ  -->
+            <!-- Например: value="https://trahkino.me/video/"   -->
             <!-- ============================================== -->
         </div>
 
+        <!-- Режим прокси — по умолчанию "Авто" -->
         <div class="input-group">
-            <label for="proxySelect">CORS Proxy:</label>
+            <label for="proxySelect">Режим доступа:</label>
             <select id="proxySelect">
-                <option value="https://api.allorigins.win/raw?url=">allorigins.win (raw)</option>
-                <option value="https://corsproxy.io/?">corsproxy.io</option>
-                <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs.com</option>
-                <option value="">Без прокси (только если CORS разрешён)</option>
+                <!-- 👇 "Авто" стоит первым = по умолчанию -->
+                <option value="auto" selected>🔄 Авто (прямой → прокси при CORS)</option>
+                <option value="">🔗 Без прокси (только прямой запрос)</option>
+                <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
+                <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
+                <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
             </select>
+            <p id="proxyHint" class="proxy-hint"></p>
         </div>
 
         <div class="buttons">
@@ -39,6 +44,9 @@
             <button id="btnCopy" onclick="copyResults()" disabled>📋 Копировать JSON</button>
             <button id="btnDownload" onclick="downloadResults()" disabled>💾 Скачать JSON</button>
         </div>
+
+        <!-- CORS индикатор -->
+        <div id="corsIndicator" class="cors-indicator" style="display:none;"></div>
 
         <div id="status" class="status"></div>
 
@@ -51,11 +59,9 @@
             <h2>📊 Результаты анализа</h2>
             
             <div class="tabs">
-                <button class="tab active" onclick="showTab('formatted', this)">Форматированный</button>
-                <button class="tab" onclick="showTab('raw', this)">Raw JSON</button>
-                <button class="tab" onclick="showTab('visual', this)">Визуальный</button>
-                <button class="tab tab-emulate" onclick="showTab('cards', this)">🃏 Карточки</button>
-                <button class="tab tab-emulate" onclick="showTab('video', this)">▶️ Видео</button>
+                <button class="tab active" onclick="showTab('formatted')">Форматированный</button>
+                <button class="tab" onclick="showTab('raw')">Raw JSON</button>
+                <button class="tab" onclick="showTab('visual')">Визуальный</button>
             </div>
 
             <div id="tab-formatted" class="tab-content active">
@@ -66,43 +72,6 @@
             </div>
             <div id="tab-visual" class="tab-content">
                 <div id="visualReport"></div>
-            </div>
-            <!-- ===== НОВАЯ ВКЛАДКА: ЭМУЛЯЦИЯ КАРТОЧЕК ===== -->
-            <div id="tab-cards" class="tab-content">
-                <div class="emulate-header">
-                    <h3>🃏 Эмуляция карточек видео</h3>
-                    <p class="emulate-subtitle">Визуализация данных, извлечённых из карточек на сайте</p>
-                    <div class="emulate-controls">
-                        <label>Вид:</label>
-                        <button class="view-btn active" onclick="setCardView('grid', this)" title="Сетка">▦</button>
-                        <button class="view-btn" onclick="setCardView('list', this)" title="Список">☰</button>
-                        <span class="emulate-info" id="cardsCountInfo"></span>
-                    </div>
-                </div>
-                <div id="emulatedCards" class="emulated-cards-grid"></div>
-                <div id="cardsEmptyState" class="empty-state" style="display:none;">
-                    <span class="empty-icon">🃏</span>
-                    <p>Карточки не найдены на странице</p>
-                    <p class="empty-hint">Убедитесь, что на анализируемой странице есть карточки контента</p>
-                </div>
-                <!-- Селекторная шпаргалка -->
-                <div id="cardsSelectorCheatsheet" class="cheatsheet" style="display:none;">
-                    <h4>📐 Шпаргалка по селекторам</h4>
-                    <div id="cheatsheetContent"></div>
-                </div>
-            </div>
-            <!-- ===== НОВАЯ ВКЛАДКА: ЭМУЛЯЦИЯ ВИДЕО ===== -->
-            <div id="tab-video" class="tab-content">
-                <div class="emulate-header">
-                    <h3>▶️ Эмуляция страницы видео</h3>
-                    <p class="emulate-subtitle">Визуализация данных страницы просмотра видео</p>
-                </div>
-                <div id="emulatedVideo"></div>
-                <div id="videoEmptyState" class="empty-state" style="display:none;">
-                    <span class="empty-icon">▶️</span>
-                    <p>Страница видео не была проанализирована</p>
-                    <p class="empty-hint">Для анализа нужна хотя бы одна ссылка на видео в карточках</p>
-                </div>
             </div>
         </div>
     </div>
