@@ -11,11 +11,40 @@
         <h1>🔍 Site Structure Analyzer</h1>
         <p class="description">Анализ HTML-структуры сайта и вывод результата в JSON</p>
 
+        <!-- ============================================================
+             БЛОК WORKER — вставьте URL вашего Cloudflare Worker-а
+             ============================================================ -->
+        <div class="worker-block">
+            <div class="worker-block-header">
+                <label for="workerUrl">
+                    ⚡ Cloudflare Worker (приоритетный транспорт)
+                </label>
+                <span id="workerStatusBadge" class="worker-badge inactive">○ Worker не задан</span>
+            </div>
+            <div class="worker-input-row">
+                <input
+                    type="text"
+                    id="workerUrl"
+                    placeholder="https://zonaproxy.ИМЯ.workers.dev"
+                    autocomplete="off"
+                    spellcheck="false"
+                >
+            </div>
+            <p class="worker-hint">
+                Worker используется как <strong>основной транспорт</strong> (приоритет выше прокси).
+                Поддерживает режим <code>?mode=extract</code> для извлечения прямых видео-ссылок.
+                URL сохраняется в браузере автоматически.
+            </p>
+        </div>
+
+        <!-- ============================================================
+             URL ДЛЯ АНАЛИЗА
+             ============================================================ -->
         <div class="input-group">
             <label for="targetUrl">URL для анализа:</label>
-            <input 
-                type="text" 
-                id="targetUrl" 
+            <input
+                type="text"
+                id="targetUrl"
                 placeholder="https://example.com/video/"
                 value=""
             >
@@ -25,20 +54,28 @@
             <!-- ============================================== -->
         </div>
 
-        <!-- Режим прокси — по умолчанию "Авто" -->
+        <!-- ============================================================
+             РЕЖИМ ДОСТУПА (прокси)
+             ============================================================ -->
         <div class="input-group">
-            <label for="proxySelect">Режим доступа:</label>
+            <label for="proxySelect">Режим доступа (фоллбэк если Worker не задан):</label>
             <select id="proxySelect">
-                <!-- 👇 "Авто" стоит первым = по умолчанию -->
-                <option value="auto" selected>🔄 Авто (прямой → прокси при CORS)</option>
+                <!-- 👇 "Авто" по умолчанию: прямой → Worker → прокси перебором -->
+                <option value="auto" selected>🔄 Авто (прямой → Worker → прокси при CORS)</option>
                 <option value="">🔗 Без прокси (только прямой запрос)</option>
                 <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
                 <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
                 <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
+                <option value="https://thingproxy.freeboard.io/fetch/">🌐 thingproxy.freeboard.io</option>
+                <option value="https://cors-anywhere.herokuapp.com/">🌐 cors-anywhere.herokuapp.com</option>
+                <option value="https://cors.bridged.cc/">🌐 cors.bridged.cc</option>
             </select>
             <p id="proxyHint" class="proxy-hint"></p>
         </div>
 
+        <!-- ============================================================
+             КНОПКИ
+             ============================================================ -->
         <div class="buttons">
             <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
             <button id="btnCopy" onclick="copyResults()" disabled>📋 Копировать JSON</button>
@@ -55,9 +92,12 @@
             <span id="progress-text" class="progress-text">0%</span>
         </div>
 
+        <!-- ============================================================
+             РЕЗУЛЬТАТЫ
+             ============================================================ -->
         <div id="results" class="results" style="display:none;">
             <h2>📊 Результаты анализа</h2>
-            
+
             <div class="tabs">
                 <button class="tab active" onclick="showTab('formatted')">Форматированный</button>
                 <button class="tab" onclick="showTab('raw')">Raw JSON</button>
