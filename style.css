@@ -30,6 +30,10 @@ h1 {
     margin-bottom: 30px;
 }
 
+/* ================================================================
+   ПОЛЯ ВВОДА
+   ================================================================ */
+
 .input-group {
     margin-bottom: 15px;
 }
@@ -58,6 +62,19 @@ h1 {
     outline: none;
     border-color: #00d4ff;
 }
+
+/* Подсказка под прокси */
+.proxy-hint {
+    font-size: 12px;
+    color: #666;
+    margin-top: 6px;
+    min-height: 18px;
+    transition: color 0.3s;
+}
+
+/* ================================================================
+   КНОПКИ
+   ================================================================ */
 
 .buttons {
     display: flex;
@@ -99,7 +116,7 @@ button {
     border: 2px solid #333366;
 }
 
-#btnCopy:hover:not(:disabled), 
+#btnCopy:hover:not(:disabled),
 #btnDownload:hover:not(:disabled) {
     background: #333366;
 }
@@ -109,12 +126,66 @@ button {
     cursor: not-allowed;
 }
 
+/* ================================================================
+   CORS ИНДИКАТОР
+   ================================================================ */
+
+.cors-indicator {
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+    font-size: 13px;
+    font-weight: bold;
+    transition: all 0.3s;
+}
+
+.cors-indicator.trying {
+    background: #1a1a3e;
+    border-left: 4px solid #00d4ff;
+    color: #00d4ff;
+}
+
+.cors-indicator.direct-ok {
+    background: #1a3e1a;
+    border-left: 4px solid #00ff88;
+    color: #00ff88;
+}
+
+.cors-indicator.cors-blocked {
+    background: #3e3a1a;
+    border-left: 4px solid #ffaa00;
+    color: #ffaa00;
+    animation: pulse-warning 1.5s ease-in-out infinite;
+}
+
+.cors-indicator.proxy-ok {
+    background: #1a3e1a;
+    border-left: 4px solid #00ff88;
+    color: #00ff88;
+}
+
+.cors-indicator.all-failed {
+    background: #3e1a1a;
+    border-left: 4px solid #ff4444;
+    color: #ff4444;
+}
+
+@keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* ================================================================
+   СТАТУС И ПРОГРЕСС
+   ================================================================ */
+
 .status {
     padding: 10px 15px;
     border-radius: 8px;
     margin: 10px 0;
     font-size: 14px;
     min-height: 20px;
+    white-space: pre-line;
 }
 
 .status.loading {
@@ -154,6 +225,20 @@ button {
     width: 0%;
 }
 
+/* Прогресс-бар при CORS-ошибке — красный */
+.progress-bar.cors-error {
+    background: linear-gradient(90deg, #ff4444, #cc2222, #ff4444);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+}
+
+/* Прогресс-бар при предупреждении — жёлтый */
+.progress-bar.warning {
+    background: linear-gradient(90deg, #ffaa00, #ff8800, #ffaa00);
+    background-size: 200% 100%;
+    animation: shimmer 2s linear infinite;
+}
+
 @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
@@ -165,10 +250,18 @@ button {
     left: 50%;
     transform: translate(-50%, -50%);
     font-weight: bold;
-    font-size: 14px;
+    font-size: 13px;
     color: #fff;
     text-shadow: 0 0 5px rgba(0,0,0,0.8);
+    white-space: nowrap;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+
+/* ================================================================
+   РЕЗУЛЬТАТЫ И ВКЛАДКИ
+   ================================================================ */
 
 .results {
     margin-top: 20px;
@@ -183,7 +276,6 @@ button {
     display: flex;
     gap: 5px;
     margin-bottom: 15px;
-    flex-wrap: wrap;
 }
 
 .tab {
@@ -199,17 +291,6 @@ button {
     background: #2a2a5e;
     color: #00d4ff;
     border-bottom-color: #2a2a5e;
-}
-
-.tab.tab-emulate {
-    border-color: #444400;
-    color: #aaaa55;
-}
-
-.tab.tab-emulate.active {
-    background: #2a2a1e;
-    color: #ffdd44;
-    border-bottom-color: #2a2a1e;
 }
 
 .tab-content {
@@ -246,12 +327,24 @@ button {
     padding: 10px;
 }
 
-/* Visual report styles */
+/* ================================================================
+   ВИЗУАЛЬНЫЙ ОТЧЁТ
+   ================================================================ */
+
 .report-section {
     margin-bottom: 25px;
     border: 1px solid #333366;
     border-radius: 8px;
     overflow: hidden;
+}
+
+.report-section.cors-error-section {
+    border-color: #663333;
+}
+
+.report-section.cors-error-section .report-section-header {
+    background: #3e1a1a;
+    color: #ff4444;
 }
 
 .report-section-header {
@@ -287,13 +380,8 @@ button {
     word-break: break-all;
 }
 
-.report-value.warning {
-    color: #ffaa00;
-}
-
-.report-value.error {
-    color: #ff4444;
-}
+.report-value.warning { color: #ffaa00; }
+.report-value.error   { color: #ff4444; }
 
 .tag {
     display: inline-block;
@@ -305,607 +393,58 @@ button {
     color: #00d4ff;
 }
 
-/* ================================================================
-   ЭМУЛЯЦИЯ КАРТОЧЕК И ВИДЕО — НОВЫЕ СТИЛИ
-   ================================================================ */
-
-/* -- Шапка эмуляции -- */
-.emulate-header {
-    margin-bottom: 20px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #333366;
-}
-
-.emulate-header h3 {
-    color: #ffdd44;
-    font-size: 1.4em;
-    margin-bottom: 5px;
-}
-
-.emulate-subtitle {
-    color: #888;
-    font-size: 13px;
-    margin-bottom: 10px;
-}
-
-.emulate-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.emulate-controls label {
-    color: #888;
-    font-size: 13px;
-}
-
-.view-btn {
-    padding: 6px 12px;
-    background: #1a1a3e;
-    border: 1px solid #444466;
-    color: #888;
-    border-radius: 4px;
-    font-size: 16px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.view-btn.active {
-    background: #333366;
-    color: #00d4ff;
-    border-color: #00d4ff;
-}
-
-.view-btn:hover {
-    border-color: #00d4ff;
-}
-
-.emulate-info {
-    margin-left: auto;
-    color: #666;
-    font-size: 12px;
-}
-
-/* -- Empty state -- */
-.empty-state {
-    text-align: center;
-    padding: 60px 20px;
-    color: #555;
-}
-
-.empty-icon {
-    font-size: 60px;
-    display: block;
-    margin-bottom: 15px;
-    opacity: 0.4;
-}
-
-.empty-state p {
-    font-size: 16px;
-    margin-bottom: 5px;
-}
-
-.empty-hint {
-    font-size: 13px;
-    color: #444;
-}
-
-/* ---- Сетка карточек ---- */
-.emulated-cards-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 16px;
-}
-
-.emulated-cards-grid.list-view {
-    grid-template-columns: 1fr;
-}
-
-/* ---- Отдельная карточка ---- */
-.emu-card {
-    background: #12122a;
-    border: 1px solid #2a2a55;
-    border-radius: 10px;
-    overflow: hidden;
-    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-    cursor: default;
-    position: relative;
-}
-
-.emu-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
-    border-color: #444488;
-}
-
-/* Превью */
-.emu-card-thumb {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16/9;
-    background: #0a0a1e;
-    overflow: hidden;
-}
-
-.emu-card-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.3s;
-}
-
-.emu-card:hover .emu-card-thumb img {
-    transform: scale(1.05);
-}
-
-.emu-card-thumb .thumb-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #1a1a3e, #0f0f23);
-    color: #333;
-    font-size: 40px;
-}
-
-/* Бейджи на превью */
-.emu-card-badges {
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
-    display: flex;
-    gap: 4px;
-}
-
-.emu-badge {
-    padding: 2px 7px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: bold;
-    line-height: 1.4;
-}
-
-.emu-badge-duration {
-    background: rgba(0, 0, 0, 0.8);
-    color: #fff;
-}
-
-.emu-badge-quality {
-    background: rgba(0, 180, 0, 0.85);
-    color: #fff;
-}
-
-/* Инфо-блок карточки */
-.emu-card-info {
-    padding: 10px 12px 12px;
-}
-
-.emu-card-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: #ddd;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin-bottom: 6px;
-}
-
-.emu-card-link {
-    font-size: 11px;
-    color: #4488cc;
-    word-break: break-all;
-    display: -webkit-box;
-    -webkit-line-clamp: 1;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-decoration: none;
-}
-
-.emu-card-link:hover {
-    color: #66aaee;
-    text-decoration: underline;
-}
-
-/* Мета под карточкой */
-.emu-card-meta {
-    display: flex;
-    gap: 8px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-}
-
-.emu-card-meta-item {
-    font-size: 11px;
-    color: #666;
-    display: flex;
-    align-items: center;
-    gap: 3px;
-}
-
-/* Номер карточки */
-.emu-card-number {
-    position: absolute;
-    top: 6px;
-    left: 6px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #00d4ff;
-    font-size: 10px;
-    font-weight: bold;
-    padding: 2px 6px;
-    border-radius: 3px;
-}
-
-/* ---- Список-вид карточки ---- */
-.list-view .emu-card {
-    display: flex;
-    flex-direction: row;
-}
-
-.list-view .emu-card-thumb {
-    width: 200px;
-    min-width: 200px;
-    aspect-ratio: 16/9;
-}
-
-.list-view .emu-card-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.list-view .emu-card-title {
-    -webkit-line-clamp: 1;
-    font-size: 14px;
-}
-
-/* ---- Селекторная шпаргалка ---- */
-.cheatsheet {
-    margin-top: 25px;
-    border: 1px dashed #444466;
-    border-radius: 8px;
+/* CORS помощь */
+.cors-help-box {
+    margin-top: 15px;
     padding: 15px;
-    background: #0f0f23;
-}
-
-.cheatsheet h4 {
-    color: #ffdd44;
-    margin-bottom: 12px;
-    font-size: 14px;
-}
-
-.cheatsheet-row {
-    display: flex;
-    padding: 6px 0;
-    border-bottom: 1px solid #1a1a3e;
-    font-size: 13px;
-    gap: 10px;
-}
-
-.cheatsheet-row:last-child {
-    border-bottom: none;
-}
-
-.cheatsheet-label {
-    color: #888;
-    min-width: 120px;
-    font-weight: bold;
-}
-
-.cheatsheet-value {
-    color: #00ff88;
-    font-family: 'Fira Code', Consolas, monospace;
-    word-break: break-all;
-}
-
-/* ================================================================
-   ЭМУЛЯЦИЯ ВИДЕО-СТРАНИЦЫ
-   ================================================================ */
-
-.emu-video-page {
-    max-width: 900px;
-    margin: 0 auto;
-}
-
-/* Плеер */
-.emu-player-container {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16/9;
-    background: #000;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 20px;
-}
-
-.emu-player-container video {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
-.emu-player-container iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-}
-
-.emu-player-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #0a0a1e, #111133);
-    color: #444;
-}
-
-.emu-player-placeholder .play-icon {
-    font-size: 80px;
-    margin-bottom: 10px;
-    opacity: 0.3;
-}
-
-.emu-player-placeholder p {
-    font-size: 14px;
-}
-
-/* Источники видео */
-.emu-video-sources {
-    margin-bottom: 20px;
-}
-
-.emu-video-sources h4 {
-    color: #ffdd44;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-.emu-source-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    background: #12122a;
-    border: 1px solid #2a2a55;
+    background: #1a1a2e;
+    border: 1px dashed #553333;
     border-radius: 8px;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-    transition: border-color 0.2s;
 }
 
-.emu-source-item:hover {
-    border-color: #444488;
+.cors-help-box h4 {
+    color: #ffaa00;
+    margin-bottom: 10px;
 }
 
-.emu-source-type {
-    padding: 3px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
-    min-width: 80px;
-    text-align: center;
-}
-
-.emu-source-type.hls {
-    background: #1a3a1a;
-    color: #44dd44;
-    border: 1px solid #336633;
-}
-
-.emu-source-type.mp4 {
-    background: #1a1a3e;
-    color: #00d4ff;
-    border: 1px solid #333388;
-}
-
-.emu-source-type.webm {
-    background: #3a2a1a;
-    color: #ffaa44;
-    border: 1px solid #665533;
-}
-
-.emu-source-type.iframe {
-    background: #2a1a3a;
-    color: #cc88ff;
-    border: 1px solid #553388;
-}
-
-.emu-source-type.unknown {
-    background: #2a2a2a;
-    color: #888;
-    border: 1px solid #444;
-}
-
-.emu-source-url {
-    flex: 1;
-    font-family: 'Fira Code', Consolas, monospace;
-    font-size: 12px;
+.cors-help-box p {
     color: #aaa;
-    word-break: break-all;
-    min-width: 0;
-}
-
-.emu-source-found-in {
-    font-size: 11px;
-    color: #666;
-    white-space: nowrap;
-}
-
-.emu-source-actions {
-    display: flex;
-    gap: 5px;
-}
-
-.emu-source-btn {
-    padding: 4px 10px;
-    background: #2a2a5e;
-    border: 1px solid #444488;
-    border-radius: 4px;
-    color: #00d4ff;
-    font-size: 11px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.emu-source-btn:hover {
-    background: #333388;
-}
-
-/* Мета-инфо видео */
-.emu-video-meta {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 6px 15px;
-    padding: 15px;
-    background: #12122a;
-    border: 1px solid #2a2a55;
-    border-radius: 8px;
-    margin-bottom: 20px;
     font-size: 13px;
+    margin-bottom: 8px;
+    line-height: 1.5;
 }
 
-.emu-video-meta dt {
-    color: #888;
-    font-weight: bold;
-}
-
-.emu-video-meta dd {
+.cors-help-box ol {
     color: #ccc;
-    word-break: break-all;
+    font-size: 13px;
+    padding-left: 20px;
+    line-height: 1.8;
 }
 
-/* Похожие видео */
-.emu-related {
-    margin-top: 25px;
-}
-
-.emu-related h4 {
-    color: #ffdd44;
-    margin-bottom: 12px;
-    font-size: 14px;
-}
-
-.emu-related-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 10px;
-}
-
-.emu-related-item {
-    background: #12122a;
-    border: 1px solid #2a2a55;
-    border-radius: 8px;
-    padding: 10px;
-    transition: border-color 0.2s;
-}
-
-.emu-related-item:hover {
-    border-color: #444488;
-}
-
-.emu-related-item a {
-    color: #4488cc;
+.cors-help-box a {
+    color: #00d4ff;
     text-decoration: none;
-    font-size: 12px;
-    word-break: break-all;
 }
 
-.emu-related-item a:hover {
-    color: #66aaee;
+.cors-help-box a:hover {
     text-decoration: underline;
 }
 
-.emu-related-item .related-text {
-    color: #aaa;
-    font-size: 13px;
-    margin-bottom: 4px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
+/* ================================================================
+   АДАПТИВ
+   ================================================================ */
 
-/* JS-конфиги */
-.emu-config-snippets {
-    margin-top: 20px;
-}
-
-.emu-config-snippets h4 {
-    color: #ffdd44;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-.emu-config-snippet {
-    background: #0a0a18;
-    border: 1px solid #2a2a55;
-    border-radius: 6px;
-    padding: 12px;
-    margin-bottom: 8px;
-    font-family: 'Fira Code', Consolas, monospace;
-    font-size: 12px;
-    color: #88cc88;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 200px;
-    overflow-y: auto;
-}
-
-/* Iframe-секция */
-.emu-iframes-section {
-    margin-top: 20px;
-}
-
-.emu-iframes-section h4 {
-    color: #ffdd44;
-    margin-bottom: 10px;
-    font-size: 14px;
-}
-
-/* ---- Адаптив ---- */
 @media (max-width: 768px) {
     .buttons {
         flex-direction: column;
     }
-    
+
     .report-item {
         flex-direction: column;
     }
-    
+
     .report-label {
         min-width: auto;
         margin-bottom: 4px;
-    }
-
-    .emulated-cards-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .list-view .emu-card {
-        flex-direction: column;
-    }
-
-    .list-view .emu-card-thumb {
-        width: 100%;
-        min-width: auto;
-    }
-
-    .emu-source-item {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .emu-video-meta {
-        grid-template-columns: 1fr;
-    }
-
-    .cheatsheet-row {
-        flex-direction: column;
     }
 }
