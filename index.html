@@ -12,27 +12,21 @@
         <p class="description">Анализ HTML-структуры сайта и вывод результата в JSON</p>
 
         <!-- ============================================================
-             БЛОК WORKER — вставьте URL вашего Cloudflare Worker-а
+             БЛОК WORKER
              ============================================================ -->
         <div class="worker-block">
             <div class="worker-block-header">
-                <label for="workerUrl">
-                    ⚡ Cloudflare Worker (приоритетный транспорт)
-                </label>
+                <label for="workerUrl">⚡ Cloudflare Worker (приоритетный транспорт)</label>
                 <span id="workerStatusBadge" class="worker-badge inactive">○ Worker не задан</span>
             </div>
             <div class="worker-input-row">
-                <input
-                    type="text"
-                    id="workerUrl"
-                    placeholder="https://zonaproxy.ИМЯ.workers.dev"
-                    autocomplete="off"
-                    spellcheck="false"
-                >
+                <input type="text" id="workerUrl"
+                       placeholder="https://zonaproxy.ИМЯ.workers.dev"
+                       autocomplete="off" spellcheck="false">
             </div>
             <p class="worker-hint">
-                Worker используется как <strong>основной транспорт</strong> (приоритет выше прокси).
-                Поддерживает режим <code>?mode=extract</code> для извлечения прямых видео-ссылок.
+                Worker — <strong>основной транспорт</strong> (приоритет выше прокси).
+                Поддерживает <code>?mode=extract</code> для прямых видео-ссылок.
                 URL сохраняется в браузере автоматически.
             </p>
         </div>
@@ -42,27 +36,18 @@
              ============================================================ -->
         <div class="input-group">
             <label for="targetUrl">URL для анализа:</label>
-            <input
-                type="text"
-                id="targetUrl"
-                placeholder="https://example.com/video/"
-                value=""
-            >
-            <!-- ============================================== -->
-            <!-- 👆 ВСТАВЬТЕ ВАШУ ССЫЛКУ В АТРИБУТ value ВЫШЕ  -->
-            <!-- Например: value="https://trahkino.me/video/"   -->
-            <!-- ============================================== -->
+            <input type="text" id="targetUrl"
+                   placeholder="https://example.com/video/" value="">
         </div>
 
         <!-- ============================================================
-             РЕЖИМ ДОСТУПА (прокси)
+             РЕЖИМ ДОСТУПА
              ============================================================ -->
         <div class="input-group">
-            <label for="proxySelect">Режим доступа (фоллбэк если Worker не задан):</label>
+            <label for="proxySelect">Режим доступа:</label>
             <select id="proxySelect">
-                <!-- 👇 "Авто" по умолчанию: прямой → Worker → прокси перебором -->
-                <option value="auto" selected>🔄 Авто (прямой → Worker → прокси при CORS)</option>
-                <option value="">🔗 Без прокси (только прямой запрос)</option>
+                <option value="auto" selected>🔄 Авто (прямой → Worker → прокси)</option>
+                <option value="">🔗 Без прокси (прямой запрос)</option>
                 <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
                 <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
                 <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
@@ -82,11 +67,8 @@
             <button id="btnDownload" onclick="downloadResults()" disabled>💾 Скачать JSON</button>
         </div>
 
-        <!-- CORS индикатор -->
         <div id="corsIndicator" class="cors-indicator" style="display:none;"></div>
-
         <div id="status" class="status"></div>
-
         <div id="progress-container" class="progress-container" style="display:none;">
             <div id="progress-bar" class="progress-bar"></div>
             <span id="progress-text" class="progress-text">0%</span>
@@ -97,14 +79,17 @@
              ============================================================ -->
         <div id="results" class="results" style="display:none;">
             <h2>📊 Результаты анализа</h2>
-
             <div class="tabs">
-                <button class="tab active" onclick="showTab('formatted')">Форматированный</button>
+                <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
+                <button class="tab" onclick="showTab('formatted')">Форматированный</button>
                 <button class="tab" onclick="showTab('raw')">Raw JSON</button>
                 <button class="tab" onclick="showTab('visual')">Визуальный</button>
             </div>
 
-            <div id="tab-formatted" class="tab-content active">
+            <div id="tab-arch" class="tab-content active">
+                <div id="archReport"></div>
+            </div>
+            <div id="tab-formatted" class="tab-content">
                 <pre id="jsonFormatted"></pre>
             </div>
             <div id="tab-raw" class="tab-content">
@@ -115,7 +100,6 @@
             </div>
         </div>
     </div>
-
     <script src="parser.js"></script>
 </body>
 </html>
