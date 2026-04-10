@@ -3,58 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v3.2</title>
+    <title>Site Structure Analyzer v3.3</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="version">v3.2</span></h1>
-    <p class="description">Глубокий анализ архитектуры сайта для парсинга — XPath, Fallbacks, JS-зависимость, обфускация</p>
+    <h1>🔍 Site Structure Analyzer <span class="ver">v3.3</span></h1>
+    <p class="desc">Глубокий анализ архитектуры — JS-парсинг категорий, поиска, сортировки, URL-схемы</p>
 
     <!-- Worker -->
     <div class="worker-block">
         <div class="worker-block-header">
-            <label for="workerUrl">⚡ Cloudflare Worker</label>
-            <span id="workerStatusBadge" class="worker-badge inactive">○ не задан</span>
+            <label for="workerUrl">⚡ Worker</label>
+            <span id="workerStatusBadge" class="worker-badge inactive">○</span>
         </div>
         <div class="worker-input-row">
             <input type="text" id="workerUrl" placeholder="https://myproxy.workers.dev" autocomplete="off" spellcheck="false">
         </div>
-        <p class="worker-hint">Приоритетный транспорт. <code>?mode=extract</code> для видео. Сохраняется в localStorage.</p>
+        <p class="worker-hint">Приоритетный транспорт. <code>?mode=extract</code>. localStorage.</p>
     </div>
 
-    <!-- URL -->
-    <div class="input-group">
-        <label for="targetUrl">URL для анализа:</label>
-        <input type="text" id="targetUrl" placeholder="https://example.com/video/" value="">
+    <!-- URL + Test word -->
+    <div class="input-row-2">
+        <div class="input-group flex-3">
+            <label for="targetUrl">URL:</label>
+            <input type="text" id="targetUrl" placeholder="https://example.com/" value="">
+        </div>
+        <div class="input-group flex-1">
+            <label for="testWord">Тестовое слово:</label>
+            <input type="text" id="testWord" value="wife" placeholder="wife">
+        </div>
     </div>
 
-    <!-- Proxy -->
-    <div class="input-group">
-        <label for="proxySelect">Режим доступа:</label>
-        <select id="proxySelect">
-            <option value="auto" selected>🔄 Авто (прямой → Worker → прокси)</option>
-            <option value="">🔗 Прямой</option>
-            <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
-            <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
-            <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
-            <option value="https://thingproxy.freeboard.io/fetch/">🌐 thingproxy</option>
-            <option value="https://cors-anywhere.herokuapp.com/">🌐 cors-anywhere</option>
-            <option value="https://cors.bridged.cc/">🌐 cors.bridged</option>
-        </select>
-        <p id="proxyHint" class="proxy-hint"></p>
-    </div>
-
-    <!-- User-Agent -->
-    <div class="input-group">
-        <label for="uaSelect">User-Agent:</label>
-        <select id="uaSelect">
-            <option value="desktop" selected>🖥 Desktop Chrome</option>
-            <option value="mobile">📱 Mobile Chrome</option>
-            <option value="bot">🤖 Googlebot</option>
-            <option value="custom">✏️ Свой</option>
-        </select>
-        <input type="text" id="uaCustom" class="ua-custom-input" placeholder="Mozilla/5.0 ..." style="display:none">
+    <!-- Proxy + UA -->
+    <div class="input-row-2">
+        <div class="input-group flex-2">
+            <label for="proxySelect">Прокси:</label>
+            <select id="proxySelect">
+                <option value="auto" selected>🔄 Авто</option>
+                <option value="">🔗 Прямой</option>
+                <option value="https://api.allorigins.win/raw?url=">allorigins</option>
+                <option value="https://corsproxy.io/?">corsproxy</option>
+                <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs</option>
+                <option value="https://thingproxy.freeboard.io/fetch/">thingproxy</option>
+                <option value="https://cors-anywhere.herokuapp.com/">cors-anywhere</option>
+                <option value="https://cors.bridged.cc/">cors.bridged</option>
+            </select>
+        </div>
+        <div class="input-group flex-2">
+            <label for="uaSelect">User-Agent:</label>
+            <select id="uaSelect">
+                <option value="desktop" selected>🖥 Desktop</option>
+                <option value="mobile">📱 Mobile</option>
+                <option value="bot">🤖 Bot</option>
+                <option value="custom">✏️ Custom</option>
+            </select>
+            <input type="text" id="uaCustom" class="ua-custom" placeholder="Mozilla/5.0 ..." style="display:none">
+        </div>
     </div>
 
     <!-- Buttons -->
