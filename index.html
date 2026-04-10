@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v3.1</title>
+    <title>Site Structure Analyzer v3.2</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer</h1>
-    <p class="description">Глубокий анализ архитектуры сайта для парсинга — JSON-отчёт</p>
+    <h1>🔍 Site Structure Analyzer <span class="version">v3.2</span></h1>
+    <p class="description">Глубокий анализ архитектуры сайта для парсинга — XPath, Fallbacks, JS-зависимость, обфускация</p>
 
     <!-- Worker -->
     <div class="worker-block">
@@ -20,7 +20,7 @@
         <div class="worker-input-row">
             <input type="text" id="workerUrl" placeholder="https://myproxy.workers.dev" autocomplete="off" spellcheck="false">
         </div>
-        <p class="worker-hint">Приоритетный транспорт. Поддерживает <code>?mode=extract</code>. Сохраняется в localStorage.</p>
+        <p class="worker-hint">Приоритетный транспорт. <code>?mode=extract</code> для видео. Сохраняется в localStorage.</p>
     </div>
 
     <!-- URL -->
@@ -29,12 +29,12 @@
         <input type="text" id="targetUrl" placeholder="https://example.com/video/" value="">
     </div>
 
-    <!-- Прокси -->
+    <!-- Proxy -->
     <div class="input-group">
         <label for="proxySelect">Режим доступа:</label>
         <select id="proxySelect">
             <option value="auto" selected>🔄 Авто (прямой → Worker → прокси)</option>
-            <option value="">🔗 Прямой (без прокси)</option>
+            <option value="">🔗 Прямой</option>
             <option value="https://api.allorigins.win/raw?url=">🌐 allorigins.win</option>
             <option value="https://corsproxy.io/?">🌐 corsproxy.io</option>
             <option value="https://api.codetabs.com/v1/proxy?quest=">🌐 codetabs.com</option>
@@ -52,27 +52,27 @@
             <option value="desktop" selected>🖥 Desktop Chrome</option>
             <option value="mobile">📱 Mobile Chrome</option>
             <option value="bot">🤖 Googlebot</option>
-            <option value="custom">✏️ Свой (ввести ниже)</option>
+            <option value="custom">✏️ Свой</option>
         </select>
-        <input type="text" id="uaCustom" class="ua-custom-input" placeholder="Mozilla/5.0 ..." style="display:none;">
+        <input type="text" id="uaCustom" class="ua-custom-input" placeholder="Mozilla/5.0 ..." style="display:none">
     </div>
 
-    <!-- Кнопки -->
+    <!-- Buttons -->
     <div class="buttons">
         <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
         <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
         <button id="btnCopyArch" onclick="copyArchitecture()" disabled>🏗️ Архитектура</button>
     </div>
 
-    <div id="corsIndicator" class="cors-indicator" style="display:none;"></div>
+    <div id="corsIndicator" class="cors-indicator" style="display:none"></div>
     <div id="status" class="status"></div>
-    <div id="progress-container" class="progress-container" style="display:none;">
+    <div id="progress-container" class="progress-container" style="display:none">
         <div id="progress-bar" class="progress-bar"></div>
         <span id="progress-text" class="progress-text">0%</span>
     </div>
 
-    <!-- Результаты -->
-    <div id="results" class="results" style="display:none;">
+    <!-- Results -->
+    <div id="results" class="results" style="display:none">
         <h2>📊 Результаты</h2>
         <div class="tabs">
             <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
