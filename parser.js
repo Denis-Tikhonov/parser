@@ -4,6 +4,7 @@
 // ================================================================
 
 const DEFAULT_TARGET_URL="";
+const DEFAULT_WORKER_URL="https://zonaproxy.777b737.workers.dev";
 let analysisResult=null,transportLog=[];
 const logT=(m,t='info')=>transportLog.push({time:new Date().toLocaleTimeString(),message:m,type:t});
 
@@ -62,12 +63,9 @@ function parseJsNavigation(doc, html, baseUrl) {
     const tw = getTestWord();
 
     // ======= CATEGORIES FROM JS =======
-    // Pattern: new p("Name", url + "?c=slug") or ?c=slug or &c=slug
-    // Format 1: new p("Name", ...concat(..., "&c=Slug-123"))
     const catPatterns = [
         /new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g,
         /new\s+\w+\s*\(\s*'([^']+)'\s*,\s*[^)]*[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g,
-        // concat patterns: "&c=Slug-123"
         /new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*"[&?]c=([A-Za-z0-9_-]+(?:-\d+)?)"/g,
     ];
     const jsCats = new Map();
@@ -82,8 +80,6 @@ function parseJsNavigation(doc, html, baseUrl) {
         }
         pat.lastIndex = 0;
     }
-
-    // Also: standalone "?c=slug" patterns
     const cParamPat = /[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g;
     let cm;
     while ((cm = cParamPat.exec(combined)) !== null) {
@@ -105,7 +101,6 @@ function parseJsNavigation(doc, html, baseUrl) {
                     const href = a.getAttribute('href');
                     const name = a.textContent.trim();
                     if (href && name && name.length < 100) {
-                        // Extract slug
                         let slug = '';
                         const cMatch = href.match(/[?&]c=([^&]+)/);
                         const pathMatch = href.match(/\/c\/([^/?]+)/);
@@ -120,7 +115,6 @@ function parseJsNavigation(doc, html, baseUrl) {
         } catch {}
     }
 
-    // Merge: JS categories take priority (usually more complete), HTML as supplement
     const mergedMap = new Map();
     result.categories.fromJs.forEach(c => mergedMap.set(c.slug, c));
     result.categories.fromHtml.forEach(c => { if (!mergedMap.has(c.slug)) mergedMap.set(c.slug, c); });
@@ -129,7 +123,6 @@ function parseJsNavigation(doc, html, baseUrl) {
     result.categories.source = result.categories.fromJs.length > result.categories.fromHtml.length ? 'JavaScript' : 'HTML';
 
     // ======= SORTING FROM JS =======
-    // Pattern: sort=value or ?sort=value
     const sortPatterns = [
         /new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*[?&]sort=([a-z0-9_-]+)/gi,
         /new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*"[?&]sort=([a-z0-9_-]+)"/gi,
@@ -146,7 +139,6 @@ function parseJsNavigation(doc, html, baseUrl) {
         }
         pat.lastIndex = 0;
     }
-    // Standalone sort= values
     const sortValPat = /[?&]sort=([a-z0-9_-]+)/gi;
     while ((cm = sortValPat.exec(combined)) !== null) {
         const v = cm[1];
@@ -154,7 +146,6 @@ function parseJsNavigation(doc, html, baseUrl) {
     }
     result.sorting.fromJs = [...jsSort.values()];
 
-    // Sorting from HTML
     for (const sel of ['select[name*="sort"]', '[class*="sort"] a', '.sorting a', 'a[href*="sort="]', 'a[href*="order="]']) {
         try {
             doc.querySelectorAll(sel).forEach(el => {
@@ -170,7 +161,6 @@ function parseJsNavigation(doc, html, baseUrl) {
     }
 
     // ======= SEARCH PATTERNS FROM JS =======
-    // Find: search=, k=, q=, query= in JS navigation code
     const searchParamPats = [
         /[?&](search)=["']?\s*\.?concat\s*\(\s*(?:encodeURIComponent\s*\()?\s*(\w)/gi,
         /[?&](k)=["']?\s*\.?concat/gi,
@@ -187,7 +177,6 @@ function parseJsNavigation(doc, html, baseUrl) {
         }
         pat.lastIndex = 0;
     }
-    // Also check forms
     doc.querySelectorAll('form').forEach(f => {
         f.querySelectorAll('input').forEach(i => {
             const nm = (i.getAttribute('name') || '').toLowerCase();
@@ -196,16 +185,13 @@ function parseJsNavigation(doc, html, baseUrl) {
     });
     result.search.paramNames = [...foundSearchParams];
 
-    // Build search example URLs
     const searchParam = result.search.paramNames[0] || 'q';
     const encodedTW = encodeURIComponent(tw);
     result.search.testWord = tw;
 
-    // Base search URL
     const searchBase = baseUrl + '/?' + searchParam + '=' + encodedTW;
     result.search.exampleUrls.push({ label: 'Поиск: ' + tw, url: searchBase });
 
-    // Search + sort combinations
     result.sorting.fromJs.forEach(s => {
         result.search.exampleUrls.push({
             label: 'Поиск + ' + s.label,
@@ -280,31 +266,23 @@ function aCards(doc,base){
     const imgA=['data-src','data-original','data-lazy-src','data-thumb','src'];
 
     for(let i=0;i<Math.min(8,cards.length);i++){const card=cards[i],cd={};
-        // TITLE
         const tF=[];for(const ts of tS)try{const el=card.querySelector(ts);if(el){const t=ts==='a[title]'?(el.getAttribute('title')||''):el.textContent.trim();if(t.length>2&&t.length<300){tF.push({css:`${uS} ${ts}`,xpath:sXP(el),example:t.substring(0,80)});if(!cd.title)cd.title=t}}}catch{}
         const imgAlt=card.querySelector('img[alt]');if(imgAlt){const alt=imgAlt.getAttribute('alt')||'';if(alt.length>3&&alt.length<200){tF.push({css:`${uS} img[alt]`,xpath:sXP(imgAlt),example:alt.substring(0,80),source:'img-alt'});if(!cd.title)cd.title=alt}}
         if(i===0&&tF.length){r.structure.title.css=tF[0].css;r.structure.title.xpath=tF[0].xpath;r.structure.title.example=tF[0].example;r.structure.title.fb=tF.slice(1)}
-        // LINK
         const lk=card.querySelector('a[href]');if(lk){cd.link=resolve(lk.getAttribute('href'),base);if(i===0){r.structure.link.css=`${uS} a[href]`;r.structure.link.xpath=sXP(lk);r.structure.link.example=cd.link;try{r.structure.link.pattern=new URL(cd.link).pathname.replace(/\/\d+\//g,'/{id}/').replace(/\/\d+$/,'/{id}').replace(/\/[a-z0-9_-]{10,}\/?$/i,'/{slug}/')}catch{}}const slug=extractSlug(cd.link);if(slug){cd.slugName=slug;if(!cd.title)cd.title=slug}}
-        // THUMB
         const thF=[];card.querySelectorAll('img').forEach(img=>{for(const at of imgA){const sv=img.getAttribute(at);if(sv&&!sv.startsWith('data:')&&sv.length>5){thF.push({css:`${uS} img`,xpath:sXP(img),attr:at,example:resolve(sv,base)});if(!cd.thumbnail)cd.thumbnail=resolve(sv,base);break}}});
         if(i===0&&thF.length){r.structure.thumbnail.css=thF[0].css;r.structure.thumbnail.xpath=thF[0].xpath;r.structure.thumbnail.attribute=thF[0].attr;r.structure.thumbnail.example=thF[0].example;r.structure.thumbnail.fb=thF.slice(1)}
-        // DURATION
         const dF=[];for(const ds of dS)try{const el=card.querySelector(ds);if(el){let t=el.textContent.trim();if(el.tagName==='TIME'&&el.getAttribute('datetime')){const pt=el.getAttribute('datetime').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);if(pt)t=[pt[1]||'',pt[2]||'0',(pt[3]||'0').padStart(2,'0')].filter(Boolean).join(':')}if(/\d{1,2}:\d{2}/.test(t)){dF.push({css:`${uS} ${ds}`,xpath:sXP(el),example:t});if(!cd.duration)cd.duration=t}}}catch{}
         if(!cd.duration)for(const el of card.querySelectorAll('span,div,small,em')){const t=el.textContent.trim();if(/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)){cd.duration=t;dF.push({css:`${uS} ${el.tagName.toLowerCase()}`,xpath:sXP(el),example:t});break}}
         if(i===0&&dF.length){r.structure.duration.css=dF[0].css;r.structure.duration.xpath=dF[0].xpath;r.structure.duration.example=dF[0].example;r.structure.duration.fb=dF.slice(1)}
-        // QUALITY
         const qF=[];for(const qs of qS)try{const el=card.querySelector(qs);if(el){const t=el.textContent.trim();if(/\b(HD|FHD|4K|1080|720|SD)\b/i.test(t)){qF.push({css:`${uS} ${qs}`,xpath:sXP(el),example:t});if(!cd.quality)cd.quality=t}}}catch{}
         if(i===0&&qF.length){r.structure.quality.css=qF[0].css;r.structure.quality.xpath=qF[0].xpath;r.structure.quality.example=qF[0].example;r.structure.quality.fb=qF.slice(1)}
-        // VIEWS
         const vF=[];for(const vs of vS)try{const el=card.querySelector(vs);if(el){const t=el.textContent.trim();const nm=t.match(/([\d,.]+\s*[KkMm]?)\s*(views?|просмотр|раз|hits?)?/i);if(nm){vF.push({css:`${uS} ${vs}`,xpath:sXP(el),example:nm[0].trim()});if(!cd.views)cd.views=nm[0].trim()}}}catch{}
         if(!cd.views){const dv=card.querySelector('[data-views]');if(dv){cd.views=dv.getAttribute('data-views');vF.push({css:`${uS} [data-views]`,xpath:sXP(dv),example:cd.views})}}
         if(i===0&&vF.length){r.structure.views.css=vF[0].css;r.structure.views.xpath=vF[0].xpath;r.structure.views.example=vF[0].example;r.structure.views.fb=vF.slice(1)}
-        // LIKES
         const lF=[];for(const ls of lS)try{const el=card.querySelector(ls);if(el){const t=el.textContent.trim();if(/[\d,.%]+/.test(t)&&t.length<30){lF.push({css:`${uS} ${ls}`,xpath:sXP(el),example:t});if(!cd.likes)cd.likes=t}}}catch{}
         if(!cd.likes)for(const attr of['data-likes','data-rating','data-score']){const el=card.querySelector(`[${attr}]`);if(el){cd.likes=el.getAttribute(attr);lF.push({css:`${uS} [${attr}]`,xpath:sXP(el),example:cd.likes});break}}
         if(i===0&&lF.length){r.structure.likes.css=lF[0].css;r.structure.likes.xpath=lF[0].xpath;r.structure.likes.example=lF[0].example;r.structure.likes.fb=lF.slice(1)}
-        // DATE
         const dtF=[];for(const ds of dtS)try{const el=card.querySelector(ds);if(el){let t=el.textContent.trim();if(el.tagName==='TIME'&&el.getAttribute('datetime')&&!/PT\d/.test(el.getAttribute('datetime')))t=el.getAttribute('datetime');if(t.length>2&&t.length<50&&/\d/.test(t)){dtF.push({css:`${uS} ${ds}`,xpath:sXP(el),example:t});if(!cd.date)cd.date=t}}}catch{}
         if(!cd.date)for(const el of card.querySelectorAll('span,div,small,em,time')){const t=el.textContent.trim();if(/^\d+\s*(дн|час|мин|ago|day|hour|min|week|month|назад)/i.test(t)||/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(t)){cd.date=t;dtF.push({css:`${uS} ${el.tagName.toLowerCase()}`,xpath:sXP(el),example:t});break}}
         if(i===0&&dtF.length){r.structure.date.css=dtF[0].css;r.structure.date.xpath=dtF[0].xpath;r.structure.date.example=dtF[0].example;r.structure.date.fb=dtF.slice(1)}
@@ -375,25 +353,19 @@ async function runFullAnalysis(){
 function displayResults(d){$('results').style.display='block';const j=JSON.stringify(d,null,2);$('jsonFormatted').innerHTML=synHL(j);$('jsonRaw').value=j;$('visualReport').innerHTML=genVis(d);$('archReport').innerHTML=genArch(d);$('btnCopyJson').disabled=false;$('btnCopyArch').disabled=false}
 
 // ================================================================
-// ARCHITECTURE TAB
+// ARCHITECTURE TAB (render — без изменений)
 // ================================================================
 function genArch(d){
     if(!d.architecture)return d._error?genCors(d):'<p style="color:#555">Нет данных</p>';
     const a=d.architecture,l=a.complexity,lc=['','lc1','lc2','lc3','lc4','lc5'][l];
     let h='';
-
-    // Diagnosis
     h+=`<div class="arch-diag"><div class="arch-main l${l}"><span class="atb atb-${a.siteType}">Тип ${a.siteType}</span><div class="ast">${esc(a.siteTypeLabel)}</div><div class="asd">${esc(a.siteTypeDesc)}</div>
     <table style="font-size:11px;color:#aaa;width:100%;border-collapse:collapse"><tr><th style="text-align:left;padding:2px 5px;color:#666;border-bottom:1px solid #222">Фактор</th><th style="text-align:right;padding:2px 5px;color:#666;border-bottom:1px solid #222">Вес</th></tr>
     ${a.complexityFactors.map(f=>`<tr><td style="padding:2px 5px">${esc(f.t)}</td><td style="text-align:right;color:${f.e>0?'#f66':'#6f6'}">${f.e>0?'+':''}${f.e}</td></tr>`).join('')}</table>
     </div><div class="arch-cx"><div class="cg"><span class="cn ${lc}">${l}/5</span></div><div class="cl ${lc}">${esc(a.complexityLabel)}</div><div class="cs">Сложность</div></div></div>`;
-
-    // JS verdict
     const js=a.jsDependency;if(js){const vc=js.jsRequired==='yes'?'jy':js.jsRequired==='partial'?'jp':'jn';
     h+=`<div class="jsv"><h4 class="${vc}">🔧 JS: ${js.jsRequired==='yes'?'❌ Требуется':js.jsRequired==='partial'?'⚠️ Частично':'✅ Не нужен'}</h4>
     ${js.ev.length?'<ul style="padding-left:16px;margin-top:4px">'+js.ev.map(e=>`<li style="font-size:11px;color:#777">${esc(e)}</li>`).join('')+'</ul>':''}</div>`}
-
-    // Recommendations
     const rc=a.recommendation;
     h+=`<div class="ab"><h3 class="wt">🔧 Стек</h3><div class="arg">
     <span class="arl">📦 Метод:</span><span class="arv"><code>${esc(rc.method)}</code></span>
@@ -401,88 +373,47 @@ function genArch(d){
     <span class="arl">🔗 Транспорт:</span><span class="arv">${esc(rc.transport)}</span>
     <span class="arl">📡 UA:</span><span class="arv"><code style="font-size:10px">${esc((a.headersUsed?.['User-Agent']||'').substring(0,60))}</code></span>
     ${rc.notes.map(n=>`<span class="arl">⚠️</span><span class="arv w">${esc(n)}</span>`).join('')}</div></div>`;
-
-    // ===== URL SCHEME (NEW!) =====
     const nav=d.navigation;if(nav){
         h+='<div class="url-scheme"><h3>🗺️ URL-схема сайта (для парсера)</h3>';
-
-        // Search
         if(nav.urlScheme?.search){const s=nav.urlScheme.search;
             h+=`<div class="us-section"><h4>🔍 Поиск (тестовое слово: <strong>${esc(d._meta.testWord)}</strong>)</h4>
             <table class="us-table"><tr><th>Вариант</th><th>URL</th></tr>`;
             (nav.search.exampleUrls||[]).forEach(u=>{h+=`<tr><td>${esc(u.label)}</td><td><a class="url-link" href="${esc(u.url)}" target="_blank">${esc(u.url)}</a></td></tr>`});
-            h+=`</table><div class="us-combo">Паттерн: <code>${esc(s.pattern)}</code></div></div>`;
-        }
-
-        // Sorting
+            h+=`</table><div class="us-combo">Паттерн: <code>${esc(s.pattern)}</code></div></div>`}
         const sortOpts=nav.sorting.fromJs.length?nav.sorting.fromJs:nav.sorting.fromHtml;
-        if(sortOpts.length){
-            h+=`<div class="us-section"><h4>🔄 Сортировка (${sortOpts.length} вариантов)</h4><table class="us-table"><tr><th>Название</th><th>Параметр</th></tr>`;
-            sortOpts.forEach(s=>{h+=`<tr><td>${esc(s.label)}</td><td><code>${esc(s.param||'—')}</code></td></tr>`});
-            h+='</table></div>';
-        }
-
-        // Categories
-        if(nav.categories.merged.length){
-            h+=`<div class="us-section"><h4>📁 Категории (${nav.categories.merged.length}, источник: ${esc(nav.categories.source)})</h4>
-            <div class="us-cat-grid">`;
-            nav.categories.merged.forEach(c=>{h+=`<div class="us-cat-item"><span class="cat-name">${esc(c.name)}</span><span class="cat-slug">${esc(c.slug)}</span></div>`});
-            h+=`</div><div class="us-combo">Паттерн: <code>${esc(nav.urlScheme.category?.pattern||'')}</code></div></div>`;
-        }
-
-        // Combinations
-        if(nav.urlScheme.combinations){const cb=nav.urlScheme.combinations;
-            h+=`<div class="us-section"><h4>🔗 Комбинации URL</h4><table class="us-table">
-            <tr><td>Поиск+Сорт+Страница</td><td><code>${esc(cb.searchPlusSortPlusPagination)}</code></td></tr>
-            <tr><td>Категория+Сорт+Страница</td><td><code>${esc(cb.categoryPlusSortPlusPagination)}</code></td></tr>
-            </table></div>`;
-        }
-        h+='</div>';
-    }
-
-    // Selectors table
+        if(sortOpts.length){h+=`<div class="us-section"><h4>🔄 Сортировка (${sortOpts.length})</h4><table class="us-table"><tr><th>Название</th><th>Параметр</th></tr>`;sortOpts.forEach(s=>{h+=`<tr><td>${esc(s.label)}</td><td><code>${esc(s.param||'—')}</code></td></tr>`});h+='</table></div>'}
+        if(nav.categories.merged.length){h+=`<div class="us-section"><h4>📁 Категории (${nav.categories.merged.length}, ${esc(nav.categories.source)})</h4><div class="us-cat-grid">`;nav.categories.merged.forEach(c=>{h+=`<div class="us-cat-item"><span class="cat-name">${esc(c.name)}</span><span class="cat-slug">${esc(c.slug)}</span></div>`});h+=`</div><div class="us-combo">Паттерн: <code>${esc(nav.urlScheme.category?.pattern||'')}</code></div></div>`}
+        if(nav.urlScheme.combinations){const cb=nav.urlScheme.combinations;h+=`<div class="us-section"><h4>🔗 Комбинации</h4><table class="us-table">
+        <tr><td>Поиск+Сорт+Стр</td><td><code>${esc(cb.searchPlusSortPlusPagination)}</code></td></tr>
+        <tr><td>Кат+Сорт+Стр</td><td><code>${esc(cb.categoryPlusSortPlusPagination)}</code></td></tr></table></div>`}
+        h+='</div>'}
     const vc2=d.videoCards;if(vc2?.found){
-        h+=`<div class="ab"><h3>🎯 Селекторы (${vc2.totalCardsFound} cards)</h3><table class="st"><tr><th>Поле</th><th>CSS</th><th>XPath</th><th>Fallbacks</th><th>Пример</th></tr>`;
-        const mkR=(nm,f,ex)=>{const fbs=(f.fb||[]).map(x=>`<code class="fb">${esc(x.css||x.attr||'')}</code>`).join(' ');return`<tr><td><strong>${nm}</strong></td><td><code>${esc(f.css||'—')}</code></td><td><code class="xp">${esc(f.xpath||'—')}</code></td><td>${fbs||'—'}</td><td style="font-size:10px;color:#888;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc((ex||f.example||'').substring(0,50))}</td></tr>`};
+        h+=`<div class="ab"><h3>🎯 Селекторы (${vc2.totalCardsFound})</h3><table class="st"><tr><th>Поле</th><th>CSS</th><th>XPath</th><th>FB</th><th>Пример</th></tr>`;
+        const mkR=(nm,f,ex)=>{const fbs=(f.fb||[]).map(x=>`<code class="fb">${esc(x.css||x.attr||'')}</code>`).join(' ');return`<tr><td><strong>${nm}</strong></td><td><code>${esc(f.css||'—')}</code></td><td><code class="xp">${esc(f.xpath||'—')}</code></td><td>${fbs||'—'}</td><td style="font-size:10px;color:#888;max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc((ex||f.example||'').substring(0,50))}</td></tr>`};
         const st=vc2.structure;
         h+=`<tr><td><strong>📦 Card</strong></td><td><code>${esc(vc2.cardSelector)}</code></td><td><code class="xp">${esc(vc2.cardXPath||'—')}</code></td><td>—</td><td>${vc2.totalCardsFound}</td></tr>`;
         h+=mkR('📌 Title',st.title);h+=mkR('🔗 Link',st.link,st.link.pattern);h+=mkR('🖼 Thumb',st.thumbnail,st.thumbnail.attribute?'attr:'+st.thumbnail.attribute:'');
-        h+=mkR('⏱ Duration',st.duration);h+=mkR('📺 Quality',st.quality);h+=mkR('👁 Views',st.views);h+=mkR('👍 Likes',st.likes);h+=mkR('📅 Date',st.date);
-        h+='</table></div>';
-    }
-
-    // Video sources
-    if(d.videoPage?.videoSources?.sources?.length){h+='<div class="ab"><h3>🎬 Видео</h3>';d.videoPage.videoSources.sources.forEach(s=>{h+=`<div class="vui"><code>${esc(s.url)}</code><div class="vum"><span class="vt ${(s.type||'').includes('HLS')?'hls':'mp4'}">${esc(s.type)}</span><span class="vt mth">${esc(s.foundIn)}</span>${s.tokenized?'<span class="vt tok">⏰ Token</span>':''}${s.base64?'<span class="vt b64">🔐 B64</span>':''}</div></div>`});h+='</div>'}
-
-    // Query Params
-    if(d.queryParams?.length){h+=`<div class="ab"><h3>🔎 GET-параметры (${d.queryParams.length})</h3><table class="qpt"><tr><th>Param</th><th>Тип</th><th>Значения</th><th>#</th></tr>`;d.queryParams.forEach(p=>{h+=`<tr><td><code>${esc(p.param)}</code></td><td><span class="tag">${esc(p.category)}</span></td><td style="font-size:10px;color:#888">${p.values.slice(0,5).map(v=>esc(v)).join(', ')}</td><td>${p.count}</td></tr>`});h+='</table></div>'}
-
-    // Checklist
+        h+=mkR('⏱ Dur',st.duration);h+=mkR('📺 Qual',st.quality);h+=mkR('👁 Views',st.views);h+=mkR('👍 Likes',st.likes);h+=mkR('📅 Date',st.date);
+        h+='</table></div>'}
+    if(d.videoPage?.videoSources?.sources?.length){h+='<div class="ab"><h3>🎬 Видео</h3>';d.videoPage.videoSources.sources.forEach(s=>{h+=`<div class="vui"><code>${esc(s.url)}</code><div class="vum"><span class="vt ${(s.type||'').includes('HLS')?'hls':'mp4'}">${esc(s.type)}</span><span class="vt mth">${esc(s.foundIn)}</span>${s.tokenized?'<span class="vt tok">⏰</span>':''}${s.base64?'<span class="vt b64">🔐</span>':''}</div></div>`});h+='</div>'}
+    if(d.queryParams?.length){h+=`<div class="ab"><h3>🔎 GET (${d.queryParams.length})</h3><table class="qpt"><tr><th>P</th><th>Тип</th><th>Знач</th><th>#</th></tr>`;d.queryParams.forEach(p=>{h+=`<tr><td><code>${esc(p.param)}</code></td><td><span class="tag">${esc(p.category)}</span></td><td style="font-size:10px;color:#888">${p.values.slice(0,5).map(v=>esc(v)).join(', ')}</td><td>${p.count}</td></tr>`});h+='</table></div>'}
     const sm=d._summary||{};const checks=[{i:'📄',l:'Каталог',v:vc2?.found?`✅ ${vc2.totalCardsFound}`:'❌',c:vc2?.found?'ok':'fail'},{i:'🗂',l:'Полей',v:sm.fieldsFound?.length?sm.fieldsFound.join(','):'—',c:sm.fieldsFound?.length?'ok':'n'},{i:'📁',l:'Категории',v:sm.categoriesCount?`✅ ${sm.categoriesCount} (${sm.categoriesSource})`:'❌',c:sm.categoriesCount?'ok':'fail'},{i:'🔄',l:'Сортировка',v:sm.sortingOptions?`✅ ${sm.sortingOptions}`:'❌',c:sm.sortingOptions?'ok':'fail'},{i:'🔍',l:'Поиск',v:sm.searchParamNames?.length?`✅ ${sm.searchParamNames.join(',')}`:'❌',c:sm.searchParamNames?.length?'ok':'fail'},{i:'📑',l:'Пагинация',v:sm.hasPagination?`✅ ${sm.paginationPattern}`:'❌',c:sm.hasPagination?'ok':'fail'},{i:'▶️',l:'Видео',v:sm.videoSourceFound?`✅ ${sm.videoSourceMethods.join(',')}`:'❌',c:sm.videoSourceFound?'ok':'fail'},{i:'📊',l:'DOM',v:a.domInfo?.totalElements||'?',c:(a.domInfo?.totalElements||0)<100?'warn':'ok'},{i:'🛡️',l:'CF',v:a.protection?.cloudflare?'⚠️':'—',c:a.protection?.cloudflare?'warn':'n'},{i:'🤖',l:'CAPTCHA',v:a.protection?.recaptcha?'❌':'—',c:a.protection?.recaptcha?'fail':'n'}];
     h+='<div class="ab"><h3>✅ Чеклист</h3><div class="acg">';checks.forEach(c=>{h+=`<div class="aci"><span class="aci-i">${c.i}</span><span class="aci-l">${esc(c.l)}</span><span class="aci-v ${c.c}">${c.v}</span></div>`});h+='</div></div>';
-
-    // Age gate
     if(a.protection?.ageGate?.detected){const ag=a.protection.ageGate;h+=`<div class="age-g"><h4>🔞 Age gate <span class="gt ${ag.type}">${esc(ag.type)}</span></h4><p>${esc(ag.note)}</p></div>`}
-
-    // Details
     h+='<div class="adg">';
     h+=`<div class="adc"><h4>⚙️ FW</h4>${a.frameworks?.length?'<ul>'+a.frameworks.map(f=>`<li><code>${esc(f)}</code></li>`).join('')+'</ul>':'<p class="ade">—</p>'}</div>`;
     h+=`<div class="adc"><h4>🔌 API</h4>${(a.apiEndpoints?.length||a.stateVars?.length)?'<ul>'+(a.stateVars||[]).map(v=>`<li>🗂 <code>${esc(v)}</code></li>`).join('')+(a.apiEndpoints||[]).map(e=>`<li>🔗 <code>${esc(e)}</code></li>`).join('')+'</ul>':'<p class="ade">HTML</p>'}</div>`;
     h+=`<div class="adc"><h4>📊 DOM</h4><ul><li>Els: <code>${a.domInfo?.totalElements||0}</code></li><li>Scripts: <code>${a.domInfo?.scripts||0}</code> (${((a.domInfo?.inlineScriptSize||0)/1024).toFixed(1)}KB)</li><li>Img: <code>${a.domInfo?.images||0}</code> Links: <code>${a.domInfo?.links||0}</code></li></ul></div>`;
     if(a.protection?.cookies?.length)h+=`<div class="adc"><h4>🍪 Cookies</h4><ul>${a.protection.cookies.map(c=>`<li><code>${esc(c)}</code></li>`).join('')}</ul></div>`;
     h+='</div>';
-
-    // Samples
     if(d.videoCards?.sampleCards?.length){h+=`<div class="ab"><h3>📑 Карточки (${d.videoCards.sampleCards.length})</h3>`;d.videoCards.sampleCards.forEach((c,i)=>{h+=`<div style="margin-bottom:8px;padding:6px;background:#0f0f23;border-radius:5px;font-size:11px"><strong style="color:#00d4ff">#${i+1}</strong> `;if(c.title)h+=`📌${esc(c.title.substring(0,50))} `;if(c.duration)h+=`⏱${esc(c.duration)} `;if(c.quality)h+=`📺${esc(c.quality)} `;if(c.views)h+=`👁${esc(c.views)} `;if(c.likes)h+=`👍${esc(c.likes)} `;if(c.date)h+=`📅${esc(c.date)} `;if(c.slugName)h+=`<span style="color:#555">slug:${esc(c.slugName.substring(0,25))}</span>`;h+='</div>'});h+='</div>'}
-
-    // Transport
     if(d._transportLog?.length){h+=`<div class="ab"><h3>🔌 Транспорт</h3><div class="transport-log">`;d._transportLog.forEach(e=>{h+=`<div class="tle ${e.type}">[${e.time}] ${esc(e.message)}</div>`});h+='</div></div>'}
     return h}
 
 function genCors(d){return`<div class="report-section cors-error-section"><div class="rsh">🛡️ Ошибка</div><div class="rsb"><div class="ri"><span class="rl">Тип:</span><span class="rv err">${esc(d._error?.type)}</span></div><div class="ri"><span class="rl">Info:</span><span class="rv err">${esc(d._error?.message)}</span></div><div class="cors-help-box"><h4>💡</h4><ol><li>Worker</li><li>Авто</li><li><a href="https://github.com/Rob--W/cors-anywhere" target="_blank">cors-anywhere</a></li></ol></div></div></div>`}
 
 // ================================================================
-// VISUAL
+// VISUAL (без изменений)
 // ================================================================
 function genVis(d){let h='';if(d._error)h+=genCors(d);if(d._summary){const s=d._summary;h+=`<div class="report-section"><div class="rsh">📋 Сводка</div><div class="rsb">
 <div class="ri"><span class="rl">URL:</span><span class="rv">${esc(d._meta.analyzedUrl)}</span></div>
@@ -499,17 +430,111 @@ if(d.navigation?.search?.exampleUrls?.length){h+=`<div class="report-section"><d
 return h}
 
 // ================================================================
-// UI
+// UI + COPY (изменения тут)
 // ================================================================
 function synHL(j){j=j.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');return j.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,m=>{let c='color:#ae81ff';if(/^"/.test(m))c=/:$/.test(m)?'color:#a6e22e':'color:#e6db74';else if(/true|false/.test(m))c='color:#66d9ef';else if(/null/.test(m))c='color:#f92672';return`<span style="${c}">${m}</span>`})}
 function showTab(n){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));const t=$('tab-'+n);if(t)t.classList.add('active');if(event?.target)event.target.classList.add('active')}
 function clip(text){navigator.clipboard.writeText(text).then(()=>setStatus('📋 OK','success')).catch(()=>{const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);setStatus('📋 OK','success')})}
 function copyResults(){if(analysisResult)clip(JSON.stringify(analysisResult,null,2))}
-function copyArchitecture(){if(!analysisResult)return;const a={url:analysisResult._meta?.analyzedUrl,analyzedAt:analysisResult._meta?.analyzedAt,userAgent:analysisResult._meta?.userAgent,testWord:analysisResult._meta?.testWord,architecture:analysisResult.architecture,summary:analysisResult._summary,navigation:analysisResult.navigation,selectors:analysisResult.videoCards?.found?analysisResult.videoCards.structure:null,cardSelector:analysisResult.videoCards?.cardSelector,cardXPath:analysisResult.videoCards?.cardXPath,sampleCards:analysisResult.videoCards?.sampleCards,pagination:analysisResult.pagination,queryParams:analysisResult.queryParams,videoPage:analysisResult.videoPage?{urlPattern:analysisResult.videoPage.urlStructure,sources:analysisResult.videoPage.videoSources,related:analysisResult.videoPage.relatedVideos,obfuscation:analysisResult.videoPage.obfuscation}:null,encoding:analysisResult.encoding,transport:analysisResult._transportLog};clip(JSON.stringify(a,null,2));setStatus('🏗️ Архитектура скопирована!','success')}
 
+// ================================================================
+// ИЗМЕНЕНИЕ 1: copyArchitecture — только уникальные данные
+// (то, чего НЕТ в полном JSON или что является сводкой)
+// ================================================================
+function copyArchitecture(){
+    if(!analysisResult)return;
+
+    // Собираем ТОЛЬКО архитектурную аналитику:
+    // - _summary (краткая сводка — не дублирует, а суммирует)
+    // - navigation.urlScheme (URL-паттерны — главное для парсера)
+    // - navigation.categories.merged (полный список категорий)
+    // - navigation.sorting (варианты сортировки)
+    // - navigation.search (поиск с примерами)
+    // - videoCards.structure (селекторы CSS/XPath/fallbacks)
+    // - architecture.recommendation (стек)
+    // - architecture.complexity + type
+    //
+    // НЕ включаем (уже есть в полном JSON):
+    // - _meta, _transportLog, encoding, meta, queryParams
+    // - videoCards.sampleCards (есть в JSON)
+    // - videoPage (полные данные есть в JSON)
+    // - architecture.domInfo, frameworks, apiEndpoints, stateVars
+    //   protection, jsDependency, obfuscation, complexityFactors
+    //   (всё это есть в полном JSON в architecture.*)
+    // - pagination (есть в JSON)
+
+    const nav = analysisResult.navigation;
+    const arch = analysisResult.architecture;
+    const vc = analysisResult.videoCards;
+
+    const archOnly = {
+        // Диагноз
+        siteType: arch?.siteType,
+        siteTypeLabel: arch?.siteTypeLabel,
+        complexity: arch?.complexity,
+        complexityLabel: arch?.complexityLabel,
+        jsRequired: arch?.jsDependency?.jsRequired,
+        recommendation: arch?.recommendation,
+
+        // URL-схема — главное для парсера
+        urlScheme: nav?.urlScheme,
+
+        // Категории (полный список — не дублируется в JSON)
+        categories: nav?.categories?.merged,
+        categoriesSource: nav?.categories?.source,
+        categoriesCount: nav?.categories?.totalCount,
+
+        // Сортировка
+        sorting: nav?.sorting?.fromJs?.length
+            ? nav.sorting.fromJs
+            : nav?.sorting?.fromHtml,
+
+        // Поиск с примерами URL
+        search: {
+            paramNames: nav?.search?.paramNames,
+            testWord: nav?.search?.testWord,
+            exampleUrls: nav?.search?.exampleUrls,
+        },
+
+        // Селекторы (CSS + XPath + fallbacks) — главное для парсера
+        selectors: vc?.found ? vc.structure : null,
+        cardSelector: vc?.cardSelector,
+        cardXPath: vc?.cardXPath,
+
+        // Видео-источники (только структура, не raw data)
+        videoUrlPattern: analysisResult.videoPage?.urlStructure?.pattern,
+        videoMethods: analysisResult.videoPage?.videoSources?.methods,
+        videoSourceCount: analysisResult.videoPage?.videoSources?.sources?.length || 0,
+    };
+
+    clip(JSON.stringify(archOnly, null, 2));
+    setStatus('🏗️ Архитектура скопирована (без дублей)!', 'success');
+}
+
+// ================================================================
+// INIT
+// ================================================================
 document.addEventListener('DOMContentLoaded',()=>{
     const ui=$('targetUrl');if(DEFAULT_TARGET_URL&&ui&&!ui.value)ui.value=DEFAULT_TARGET_URL;if(ui)ui.addEventListener('keypress',e=>{if(e.key==='Enter')runFullAnalysis()});
     const ps=$('proxySelect');if(ps)ps.addEventListener('change',()=>{const h=$('proxyHint');if(h)h.textContent={'auto':'Прямой→Worker→прокси','':'Прямой'}[ps.value]||ps.value.split('/')[2]||''});
-    const wi=$('workerUrl');if(wi){const sv=localStorage.getItem('aWU');if(sv){wi.value=sv;updW(true)}wi.addEventListener('input',()=>updW(!!wi.value.trim()));wi.addEventListener('change',()=>{const v=wi.value.trim();if(v)localStorage.setItem('aWU',v);else localStorage.removeItem('aWU')})}
+
+    // ИЗМЕНЕНИЕ 2: Worker — default + localStorage
+    const wi=$('workerUrl');
+    if(wi){
+        const saved=localStorage.getItem('aWU');
+        if(saved){
+            wi.value=saved;
+        }else if(!wi.value){
+            wi.value=DEFAULT_WORKER_URL;
+        }
+        updW(!!wi.value.trim());
+        wi.addEventListener('input',()=>updW(!!wi.value.trim()));
+        wi.addEventListener('change',()=>{
+            const v=wi.value.trim();
+            if(v)localStorage.setItem('aWU',v);
+            else localStorage.removeItem('aWU');
+        });
+    }
+
     const ua=$('uaSelect'),uc=$('uaCustom');if(ua&&uc)ua.addEventListener('change',()=>{uc.style.display=ua.value==='custom'?'block':'none'});
 });
