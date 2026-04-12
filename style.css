@@ -5,7 +5,6 @@ h1{text-align:center;color:#00d4ff;font-size:2em;margin-bottom:8px}
 .ver{font-size:.45em;color:#555;vertical-align:super}
 .desc{text-align:center;color:#888;margin-bottom:25px;font-size:13px}
 
-/* Worker */
 .worker-block{background:#0d1a2e;border:1px solid #1a3a5c;border-radius:10px;padding:14px 16px;margin-bottom:16px}
 .worker-block-header{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 .worker-block-header label{color:#00d4ff;font-weight:bold;font-size:14px}
@@ -18,7 +17,6 @@ h1{text-align:center;color:#00d4ff;font-size:2em;margin-bottom:8px}
 .worker-hint{font-size:11px;color:#557;margin-top:6px}
 .worker-hint code{color:#77a;background:#111;padding:1px 4px;border-radius:3px}
 
-/* Inputs */
 .input-group{margin-bottom:14px}
 .input-group label{display:block;margin-bottom:4px;color:#00d4ff;font-weight:bold;font-size:13px}
 .input-group input,.input-group select{width:100%;padding:10px 14px;background:#1a1a3e;border:2px solid #333366;border-radius:8px;color:#fff;font-size:15px;transition:.3s}
@@ -27,7 +25,6 @@ h1{text-align:center;color:#00d4ff;font-size:2em;margin-bottom:8px}
 .flex-1{flex:1}.flex-2{flex:2}.flex-3{flex:3}
 .ua-custom{margin-top:6px;font-size:13px!important;font-family:'Fira Code',Consolas,monospace!important}
 
-/* Buttons */
 .buttons{display:flex;gap:10px;margin:18px 0;flex-wrap:wrap}
 button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:bold;transition:.3s}
 #btnAnalyze{background:linear-gradient(135deg,#00d4ff,#0066ff);color:#fff;flex:1}
@@ -38,7 +35,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 #btnCopyJson:hover:not(:disabled),#btnCopyArch:hover:not(:disabled){background:#333366}
 #btnCopyJson:disabled,#btnCopyArch:disabled{opacity:.3;cursor:not-allowed}
 
-/* CORS */
 .cors-indicator{padding:10px 15px;border-radius:8px;margin:10px 0;font-size:13px;font-weight:bold}
 .cors-indicator.trying{background:#1a1a3e;border-left:4px solid #00d4ff;color:#00d4ff}
 .cors-indicator.direct-ok{background:#1a3e1a;border-left:4px solid #00ff88;color:#00ff88}
@@ -48,7 +44,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 .cors-indicator.all-failed{background:#3e1a1a;border-left:4px solid #ff4444;color:#ff4444}
 @keyframes pw{0%,100%{opacity:1}50%{opacity:.7}}
 
-/* Status/Progress */
 .status{padding:10px 15px;border-radius:8px;margin:10px 0;font-size:14px;min-height:20px;white-space:pre-line}
 .status.loading{background:#1a1a3e;border-left:4px solid #ffaa00;color:#ffaa00}
 .status.success{background:#1a3e1a;border-left:4px solid #00ff88;color:#00ff88}
@@ -61,7 +56,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 @keyframes sh{0%{background-position:-200% 0}100%{background-position:200% 0}}
 .progress-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-weight:bold;font-size:13px;color:#fff;text-shadow:0 0 5px rgba(0,0,0,.8);white-space:nowrap;max-width:90%;overflow:hidden;text-overflow:ellipsis}
 
-/* Tabs */
 .results{margin-top:18px}
 .results h2{color:#00d4ff;margin-bottom:14px}
 .tabs{display:flex;gap:4px;margin-bottom:14px;flex-wrap:wrap}
@@ -73,7 +67,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 #jsonFormatted{color:#e0e0e0;font-family:'Fira Code','Consolas',monospace;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all}
 #jsonRaw{width:100%;min-height:400px;background:#0f0f23;color:#00ff88;border:none;font-family:monospace;font-size:12px;resize:vertical;padding:10px}
 
-/* Report */
 .report-section{margin-bottom:22px;border:1px solid #333366;border-radius:8px;overflow:hidden}
 .report-section.cors-error-section{border-color:#663333}
 .report-section.cors-error-section .rsh{background:#3e1a1a;color:#ff4444}
@@ -95,7 +88,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 .tle{padding:2px 0;border-bottom:1px solid #1a1a2e}.tle:last-child{border-bottom:none}
 .tle.success{color:#00ff88}.tle.fail{color:#ff6666}.tle.info{color:#aac}.tle.warning{color:#ffaa00}
 
-/* ARCH */
 .arch-diag{display:flex;gap:18px;margin-bottom:22px;flex-wrap:wrap}
 .arch-main{flex:1;min-width:280px;background:#0d1a2e;border:2px solid #1a3a5c;border-radius:12px;padding:18px;position:relative;overflow:hidden}
 .arch-main::before{content:'';position:absolute;top:0;left:0;width:6px;height:100%;border-radius:6px 0 0 6px}
@@ -163,7 +155,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 .vt.mp4{background:#1a1a3e;color:#00d4ff;border:1px solid #338}.vt.hls{background:#1a3a1a;color:#4d4;border:1px solid #363}
 .vt.tok{background:#3a2a1a;color:#fa4;border:1px solid #653}.vt.b64{background:#2a1a3a;color:#c8f;border:1px solid #538}.vt.mth{background:#1a1a2e;color:#aaa;border:1px solid #333}
 
-/* URL scheme block */
 .url-scheme{background:#0d1a2e;border:1px solid #1a3a5c;border-radius:10px;padding:16px;margin-bottom:18px}
 .url-scheme h3{color:#ffdd44;margin-bottom:12px;font-size:14px}
 .us-section{margin-bottom:14px}
@@ -180,7 +171,6 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
 .us-combo{font-size:12px;color:#888;margin-top:8px;padding:10px;background:#0a0a1e;border-radius:6px;font-family:'Fira Code',monospace}
 .us-combo code{color:#00ff88}
 
-/* QP table */
 .qpt{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
 .qpt th{text-align:left;padding:3px 6px;background:#111e33;color:#666;border-bottom:1px solid #1a3a5c}
 .qpt td{padding:3px 6px;border-bottom:1px solid #111e33}
