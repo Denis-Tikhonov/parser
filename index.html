@@ -41,7 +41,8 @@
             <label for="proxySelect">Прокси:</label>
             <select id="proxySelect">
                 <option value="auto" selected>🔄 Авто</option>
-                <option value="">🔗 Прямой</option>
+                <option value="">🔗 Прямой (без прокси)</option>
+                <option value="direct-test">🧪 Тест без прокси (диагностика)</option>
                 <option value="https://api.allorigins.win/raw?url=">allorigins</option>
                 <option value="https://corsproxy.io/?">corsproxy</option>
                 <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs</option>
@@ -49,6 +50,7 @@
                 <option value="https://cors-anywhere.herokuapp.com/">cors-anywhere</option>
                 <option value="https://cors.bridged.cc/">cors.bridged</option>
             </select>
+            <p id="proxyHint" class="proxy-hint"></p>
         </div>
         <div class="input-group flex-2">
             <label for="uaSelect">User-Agent:</label>
