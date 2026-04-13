@@ -188,3 +188,24 @@ button{padding:11px 22px;border:none;border-radius:8px;cursor:pointer;font-size:
     .adg,.acg,.compat-grid{grid-template-columns:1fr}.arg{grid-template-columns:1fr}
     .st,.us-table,.qpt{font-size:10px}
 }
+
+/* Direct test results */
+.direct-test-block{background:#0d1a2e;border:2px solid #1a5a3c;border-radius:10px;padding:16px;margin-bottom:18px}
+.direct-test-block.fail{border-color:#5a1a1a}
+.direct-test-block h3{color:#00ffaa;margin-bottom:12px;font-size:14px}
+.direct-test-block h3.fail-title{color:#ff4444}
+.dt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:6px}
+.dt-item{display:flex;align-items:flex-start;gap:8px;padding:6px 10px;background:#111e33;border-radius:6px;font-size:12px;line-height:1.4}
+.dt-icon{font-size:15px;min-width:22px;text-align:center;margin-top:1px}
+.dt-text{color:#bbb}
+.dt-text strong{color:#ddd}
+.dt-text .dt-hint{color:#777;font-size:11px;display:block;margin-top:2px}
+.dt-text code{background:#1a1a3e;color:#ffaa44;padding:1px 4px;border-radius:3px;font-size:11px}
+.dt-summary{margin-top:12px;padding:12px;background:#0a0a1e;border-radius:8px;font-size:13px;line-height:1.6}
+.dt-summary .verdict{font-size:15px;font-weight:bold;margin-bottom:6px}
+.dt-summary .verdict.ok{color:#00ff88}
+.dt-summary .verdict.partial{color:#ffaa00}
+.dt-summary .verdict.fail{color:#ff4444}
+.dt-summary ul{padding-left:18px;color:#aaa;margin-top:6px}
+.dt-summary li{margin-bottom:3px}
+.proxy-hint{font-size:11px;color:#666;margin-top:4px;min-height:14px}
