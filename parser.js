@@ -228,9 +228,254 @@ async function aVP(url,base){const r={analyzed:false,videoUrl:url,urlStructure:{
 function synth(dom,fw,api,prot,obf,jsd,vc,vp){let st='A',lb='Статический HTML',ds='Все данные в HTML';const empty=dom.totalElements<100,spa=fw.some(f=>['React','Vue.js','Angular','Next.js','Nuxt.js'].includes(f));const hAPI=api.endpoints.length>0||api.stateVars.length>0;const hls=vp?.videoSources?.sources?.some(s=>(s.type||'').includes('HLS'));const ifr=vp?.videoSources?.playerIframes?.length>0;if(empty&&spa){st='C';lb='Dynamic JS';ds='Headless'}else if(!empty&&hAPI&&!vc?.found){st='B';lb='JSON API';ds='API sniffing'}else if(hls&&!vc?.found){st='D';lb='Стриминг';ds='Stream extractor'}else if(vc?.found&&(ifr||spa||hAPI)){st='E';lb='Гибрид';ds='HTML+JS'}let cx=1;const cf=[];if(vc?.found){cx-=.5;cf.push({t:'Cards HTML',e:-.5})}else{cx+=1.5;cf.push({t:'No cards',e:1.5})}if(vp?.videoSources?.found){const mt=vp.videoSources.methods||[];if(mt.includes('video_tag')){cf.push({t:'<video>',e:-.3});cx-=.3}else if(mt.includes('javascript')){cf.push({t:'JS',e:.3});cx+=.3}else if(mt.includes('base64')){cf.push({t:'Base64',e:.8});cx+=.8}}else{cx+=1;cf.push({t:'No video',e:1})}if(ifr){cx+=.5;cf.push({t:'iframe',e:.5})}if(empty){cx+=1.5;cf.push({t:'Empty DOM',e:1.5})}if(spa){cx+=.5;cf.push({t:'SPA',e:.5})}if(prot.cloudflare){cx+=prot.cloudflareTurnstile?1.5:1;cf.push({t:prot.cloudflareTurnstile?'CF Turnstile':'CF Basic',e:prot.cloudflareTurnstile?1.5:1})}if(prot.ddosGuard){cx+=.8;cf.push({t:'DDoS',e:.8})}if(prot.recaptcha){cx+=1;cf.push({t:'CAPTCHA',e:1})}if(prot.drm){cx+=1.5;cf.push({t:'DRM: '+prot.drmDetails.join(','),e:1.5})}if(obf?.base64Urls?.length){cx+=.5;cf.push({t:'Base64 obf',e:.5})}const lvl=Math.max(1,Math.min(5,Math.round(cx)));const ll={1:'Элементарно',2:'Просто',3:'Средне',4:'Сложно',5:'Очень сложно'};let rm='CSS + XPath',rt='Cheerio/BS4',rtr='Прокси',rn=[];if(st==='B'){rm='API sniffing';rt='requests+JSON'}else if(st==='C'){rm='Headless';rt='Puppeteer';rtr='Headless Chrome'}else if(st==='E'){rm='CSS + JS regex';rt='Cheerio + regex'}if(prot.cloudflare||prot.ddosGuard){rtr='Worker/stealth';rn.push('Anti-DDoS')}if(jsd.jsRequired==='yes')rn.push('Requires JS');if(prot.drm)rn.push('DRM — прямое скачивание невозможно');return{siteType:st,siteTypeLabel:lb,siteTypeDesc:ds,complexity:lvl,complexityLabel:ll[lvl],complexityFactors:cf,recommendation:{method:rm,tools:rt,transport:rtr,notes:rn},frameworks:fw,apiEndpoints:api.endpoints,stateVars:api.stateVars,protection:prot,domInfo:dom,jsDependency:jsd,obfuscation:obf,headersUsed:{'User-Agent':getUA()}}}
 
 // ================================================================
+// DIRECT TEST — проверка сайта без прокси
+// ================================================================
+async function runDirectTest() {
+    const ui = $('targetUrl'), targetUrl = (ui?.value.trim() || '') || DEFAULT_TARGET_URL;
+    if (!targetUrl) { setStatus('❌ URL!', 'error'); return; }
+    try { new URL(targetUrl); } catch { setStatus('❌ Bad URL', 'error'); return; }
+    if (ui) ui.value = targetUrl;
+    const base = baseOf(targetUrl);
+    const btn = $('btnAnalyze'); if (btn) { btn.disabled = true; btn.textContent = '🧪 Тестирую...'; }
+    $('results').style.display = 'none'; updCI('hidden'); transportLog = [];
+    const pb = $('progress-bar'); if (pb) pb.classList.remove('cors-error', 'warning', 'worker');
+
+    const results = {
+        url: targetUrl,
+        testedAt: new Date().toISOString(),
+        checks: [],
+        verdict: 'unknown'
+    };
+
+    setStatus('🧪 Тест без прокси...', 'loading');
+    setProgress(10, '🔗 Прямой запрос...');
+
+    // 1. Прямой запрос к каталогу
+    let catalogHtml = null, catalogOk = false, catalogError = null;
+    try {
+        const ac = new AbortController();
+        const timeout = setTimeout(() => ac.abort(), 12000);
+        const resp = await fetch(targetUrl, {
+            headers: { Accept: 'text/html,*/*' },
+            signal: ac.signal
+        });
+        clearTimeout(timeout);
+        if (resp.ok) {
+            catalogHtml = await resp.text();
+            if (catalogHtml.length > 100) {
+                catalogOk = true;
+                results.checks.push({ key: 'directFetch', icon: '✅', label: 'Прямой запрос к каталогу', status: 'ok', hint: `HTTP ${resp.status}, ${(catalogHtml.length / 1024).toFixed(0)} KB` });
+            } else {
+                results.checks.push({ key: 'directFetch', icon: '⚠️', label: 'Прямой запрос', status: 'warn', hint: `Ответ слишком мал: ${catalogHtml.length} байт` });
+            }
+        } else {
+            results.checks.push({ key: 'directFetch', icon: '❌', label: 'Прямой запрос', status: 'fail', hint: `HTTP ${resp.status}` });
+        }
+    } catch (e) {
+        catalogError = e;
+        const isCors = isCE(e);
+        results.checks.push({ key: 'directFetch', icon: '❌', label: 'Прямой запрос к каталогу', status: 'fail', hint: isCors ? 'CORS заблокирован — прямой доступ из браузера невозможен' : e.message });
+    }
+
+    setProgress(30, 'Анализ HTML...');
+
+    // 2. Если HTML получен — проверить SSR
+    if (catalogHtml) {
+        const doc = parseH(catalogHtml);
+        const domCount = doc.querySelectorAll('*').length;
+
+        // SSR check
+        const hasMeaningfulDom = domCount > 100;
+        const spaRoot = doc.querySelector('#app, #root, #__next, #__nuxt, [data-reactroot]');
+        const isSPA = spaRoot && spaRoot.children.length <= 3;
+        results.checks.push({
+            key: 'ssr', icon: hasMeaningfulDom && !isSPA ? '✅' : '❌',
+            label: 'HTML содержит контент (SSR)',
+            status: hasMeaningfulDom && !isSPA ? 'ok' : 'fail',
+            hint: isSPA ? `SPA-root найден, DOM ${domCount} — нужен JS` : `DOM ${domCount} элементов`
+        });
+
+        // Cards check
+        const cSels = ['.video-item', '.video-card', '.thumb-item', '.thumb', '.video-thumb', '.video_block', '.item', '.video', 'article', '.card', '[data-video-id]'];
+        let cardsFound = 0, cardSel = '';
+        for (const s of cSels) {
+            try {
+                const f = doc.querySelectorAll(s);
+                if (f.length >= 2) { cardsFound = f.length; cardSel = s; break; }
+            } catch {}
+        }
+        results.checks.push({
+            key: 'cards', icon: cardsFound > 0 ? '✅' : '❌',
+            label: 'Карточки в HTML',
+            status: cardsFound > 0 ? 'ok' : 'fail',
+            hint: cardsFound > 0 ? `${cardsFound} карточек (${cardSel})` : 'Не найдены — возможно грузятся через JS'
+        });
+
+        // Thumbnails check
+        const imgs = doc.querySelectorAll('img[src], img[data-src]');
+        const thumbCount = Array.from(imgs).filter(i => {
+            const s = i.getAttribute('src') || i.getAttribute('data-src') || '';
+            return s && !s.startsWith('data:') && s.length > 10;
+        }).length;
+        results.checks.push({
+            key: 'thumbs', icon: thumbCount > 3 ? '✅' : '⚠️',
+            label: 'Постеры/превью доступны',
+            status: thumbCount > 3 ? 'ok' : 'warn',
+            hint: `${thumbCount} картинок найдено`
+        });
+
+        // Cloudflare/Protection
+        const lc = catalogHtml.toLowerCase();
+        const hasCF = lc.includes('challenges.cloudflare.com') || lc.includes('cf-browser-verification');
+        const hasTurnstile = lc.includes('turnstile') || lc.includes('cf-turnstile');
+        const hasDDoS = lc.includes('ddos-guard');
+        const hasCaptcha = lc.includes('recaptcha') || lc.includes('hcaptcha');
+        if (hasCF) {
+            results.checks.push({ key: 'cf', icon: hasTurnstile ? '❌' : '⚠️', label: hasTurnstile ? 'Cloudflare Turnstile' : 'Cloudflare Basic', status: hasTurnstile ? 'fail' : 'warn', hint: hasTurnstile ? 'JS-challenge — прямой парсинг невозможен' : 'Возможен обход через заголовки' });
+        } else {
+            results.checks.push({ key: 'cf', icon: '✅', label: 'Cloudflare', status: 'ok', hint: 'Не обнаружен' });
+        }
+        if (hasDDoS) results.checks.push({ key: 'ddos', icon: '⚠️', label: 'DDoS-Guard', status: 'warn', hint: 'Может блокировать автоматические запросы' });
+        if (hasCaptcha) results.checks.push({ key: 'captcha', icon: '❌', label: 'CAPTCHA', status: 'fail', hint: 'Обнаружена — нужен solver' });
+
+        // Age gate
+        const ageText = /(?:мне\s*(?:уже\s*)?18|i\s*am\s*(?:over\s*)?18|18\+|старше\s*18|confirm.*age)/i.test(doc.body?.textContent || '');
+        const ageSel = doc.querySelector('#age-verify, #age-gate, .age-verify, .age-gate, [class*="age-verif"]');
+        if (ageText || ageSel) {
+            results.checks.push({ key: 'age', icon: '⚠️', label: 'Age Gate обнаружен', status: 'warn', hint: 'Может потребоваться cookie или POST-подтверждение' });
+        }
+
+        // DRM
+        const allScript = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n').toLowerCase();
+        const hasDRM = ['widevine', 'playready', 'fairplay', 'clearkey', 'encrypted-media', 'requestmedialkeysystemaccess'].some(d => allScript.includes(d) || lc.includes(d));
+        results.checks.push({ key: 'drm', icon: hasDRM ? '❌' : '✅', label: 'DRM-защита', status: hasDRM ? 'fail' : 'ok', hint: hasDRM ? 'Обнаружена — прямое скачивание невозможно' : 'Не обнаружена' });
+    }
+
+    setProgress(60, 'Тест видео-страницы...');
+
+    // 3. Проверить видео-страницу (если есть карточки — найти ссылку)
+    let videoPageOk = false;
+    if (catalogHtml) {
+        const doc = parseH(catalogHtml);
+        let videoUrl = null;
+        const links = doc.querySelectorAll('a[href]');
+        for (const a of links) {
+            const href = a.getAttribute('href') || '';
+            if (href.includes('video') || href.includes('watch') || href.includes('view') || /\/\d{3,}\//.test(href)) {
+                videoUrl = resolve(href, base);
+                break;
+            }
+        }
+        if (videoUrl) {
+            try {
+                const ac2 = new AbortController();
+                const t2 = setTimeout(() => ac2.abort(), 12000);
+                const resp2 = await fetch(videoUrl, { headers: { Accept: 'text/html,*/*' }, signal: ac2.signal });
+                clearTimeout(t2);
+                if (resp2.ok) {
+                    const vHtml = await resp2.text();
+                    videoPageOk = vHtml.length > 200;
+                    const vDoc = parseH(vHtml);
+
+                    // Video URL in HTML
+                    const videoTag = vDoc.querySelector('video[src], video source[src]');
+                    const ogVideo = vDoc.querySelector('meta[property="og:video"]');
+                    const allScript = Array.from(vDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
+                    const jsVideoMatch = allScript.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8)/i);
+
+                    if (videoTag) {
+                        const src = videoTag.getAttribute('src') || '';
+                        results.checks.push({ key: 'videoTag', icon: '✅', label: 'Видео в <video> теге', status: 'ok', hint: `<source>/<video> src найден` });
+                    } else if (ogVideo) {
+                        results.checks.push({ key: 'videoOg', icon: '✅', label: 'Видео в og:video', status: 'ok', hint: ogVideo.getAttribute('content')?.substring(0, 60) });
+                    } else if (jsVideoMatch) {
+                        results.checks.push({ key: 'videoJs', icon: '⚠️', label: 'Видео только в JS-коде', status: 'warn', hint: 'Нужен regex-парсинг JS' });
+                    } else {
+                        results.checks.push({ key: 'videoNone', icon: '❌', label: 'Видео-URL не найден в HTML', status: 'fail', hint: 'Возможно требуется JS-рендер или API' });
+                    }
+
+                    // Token check
+                    const anyVideoUrl = videoTag?.getAttribute('src') || ogVideo?.getAttribute('content') || jsVideoMatch?.[0] || '';
+                    if (anyVideoUrl && /(?:token|expires|hash|sign)=/i.test(anyVideoUrl)) {
+                        results.checks.push({ key: 'token', icon: '⚠️', label: 'Видео-URL токенизирован', status: 'warn', hint: 'URL временный — содержит token/expires' });
+                    } else if (anyVideoUrl) {
+                        results.checks.push({ key: 'token', icon: '✅', label: 'Видео-URL стабилен', status: 'ok', hint: 'Без токенов' });
+                    }
+
+                    results.checks.push({ key: 'videoPage', icon: '✅', label: 'Видео-страница доступна', status: 'ok', hint: `${(vHtml.length / 1024).toFixed(0)} KB` });
+                } else {
+                    results.checks.push({ key: 'videoPage', icon: '❌', label: 'Видео-страница', status: 'fail', hint: `HTTP ${resp2.status}` });
+                }
+            } catch (e) {
+                results.checks.push({ key: 'videoPage', icon: '❌', label: 'Видео-страница', status: 'fail', hint: isCE(e) ? 'CORS заблокирован' : e.message });
+            }
+        }
+    }
+
+    setProgress(90, 'Вердикт...');
+
+    // 4. Verdict
+    const okCount = results.checks.filter(c => c.status === 'ok').length;
+    const failCount = results.checks.filter(c => c.status === 'fail').length;
+    const warnCount = results.checks.filter(c => c.status === 'warn').length;
+    const total = results.checks.length;
+
+    if (failCount === 0 && warnCount <= 1) {
+        results.verdict = 'ok';
+        results.verdictLabel = '✅ Совместим — парсинг без прокси возможен';
+        results.verdictHints = ['Прямой fetch работает', 'HTML содержит данные', 'Защита не мешает'];
+    } else if (failCount <= 2 && okCount >= total / 2) {
+        results.verdict = 'partial';
+        results.verdictLabel = '⚠️ Частично — работает с ограничениями';
+        results.verdictHints = [];
+        if (results.checks.find(c => c.key === 'directFetch' && c.status === 'fail')) results.verdictHints.push('CORS — нужен прокси/Worker для запросов');
+        if (results.checks.find(c => c.key === 'ssr' && c.status === 'fail')) results.verdictHints.push('SPA — нужен headless browser');
+        if (results.checks.find(c => c.key === 'videoNone' || c.key === 'videoJs')) results.verdictHints.push('Видео через JS — regex или headless');
+        if (warnCount > 0) results.verdictHints.push(`${warnCount} предупреждений — см. детали`);
+    } else {
+        results.verdict = 'fail';
+        results.verdictLabel = '❌ Несовместим — прямой парсинг невозможен';
+        results.verdictHints = [];
+        if (results.checks.find(c => c.key === 'directFetch' && c.status === 'fail')) results.verdictHints.push('Сайт блокирует прямые запросы (CORS/WAF)');
+        if (results.checks.find(c => c.key === 'cf' && c.status === 'fail')) results.verdictHints.push('Cloudflare Turnstile — нужен headless + stealth');
+        if (results.checks.find(c => c.key === 'drm' && c.status === 'fail')) results.verdictHints.push('DRM — прямое скачивание невозможно');
+        if (results.checks.find(c => c.key === 'captcha' && c.status === 'fail')) results.verdictHints.push('CAPTCHA — нужен solver');
+    }
+
+    setProgress(100, '✅');
+
+    // 5. Render
+    analysisResult = { _meta: { analyzedUrl: targetUrl, analyzedAt: results.testedAt, mode: 'direct-test', tool: 'v3.4' }, directTest: results, _transportLog: transportLog };
+
+    let h = '';
+    const isFail = results.verdict === 'fail';
+    h += `<div class="direct-test-block${isFail ? ' fail' : ''}">`;
+    h += `<h3${isFail ? ' class="fail-title"' : ''}>🧪 Тест без прокси: ${esc(targetUrl)}</h3>`;
+    h += '<div class="dt-grid">';
+    results.checks.forEach(c => {
+        h += `<div class="dt-item"><span class="dt-icon">${c.icon}</span><div class="dt-text"><strong>${esc(c.label)}</strong><span class="dt-hint">${esc(c.hint)}</span></div></div>`;
+    });
+    h += '</div>';
+    h += `<div class="dt-summary"><div class="verdict ${results.verdict}">${esc(results.verdictLabel)}</div>`;
+    if (results.verdictHints.length) { h += '<ul>'; results.verdictHints.forEach(v => { h += `<li>${esc(v)}</li>`; }); h += '</ul>'; }
+    h += '</div></div>';
+
+    $('results').style.display = 'block';
+    $('archReport').innerHTML = h;
+    $('jsonFormatted').innerHTML = synHL(JSON.stringify(analysisResult, null, 2));
+    $('jsonRaw').value = JSON.stringify(analysisResult, null, 2);
+    $('visualReport').innerHTML = h;
+    $('btnCopyJson').disabled = false;
+    $('btnCopyArch').disabled = false;
+    showTab('arch');
+    setStatus('🧪 Тест завершён!', 'success');
+    if (btn) { btn.disabled = false; btn.textContent = '🚀 Полный анализ'; }
+}
+
+// ================================================================
 // MAIN
 // ================================================================
-async function runFullAnalysis(){const ui=$('targetUrl'),targetUrl=(ui?.value.trim()||'')||DEFAULT_TARGET_URL;if(!targetUrl){setStatus('❌ URL!','error');return}try{new URL(targetUrl)}catch{setStatus('❌ Bad URL','error');return}if(ui)ui.value=targetUrl;const base=baseOf(targetUrl),w=getW();const btn=$('btnAnalyze');if(btn){btn.disabled=true;btn.textContent='⏳'}$('results').style.display='none';updCI('hidden');updW(!!w);transportLog=[];const pb=$('progress-bar');if(pb)pb.classList.remove('cors-error','warning','worker');analysisResult={_meta:{analyzedUrl:targetUrl,baseUrl:base,analyzedAt:new Date().toISOString(),workerUsed:w||'нет',userAgent:getUA(),testWord:getTestWord(),tool:'v3.4'}};try{setStatus('📥','loading');setProgress(10,'📡');let html;try{html=await fetchPage(targetUrl)}catch(e){setProgress(10,'❌','cors-error');setStatus('❌ '+e.message,'error');analysisResult._error={type:isCE(e)?'CORS':'FETCH',message:e.message};analysisResult._transportLog=transportLog;displayResults(analysisResult);return}const doc=parseH(html);setProgress(20,(html.length/1024).toFixed(0)+'KB');setProgress(22,'DOM');const dom=aDom(doc);setProgress(25,'Enc');analysisResult.encoding=aEnc(doc);setProgress(27,'Meta');analysisResult.meta=aMeta(doc);setProgress(30,'FW');const fw=aFW(doc,html);setProgress(34,'API');const api=aAPI(doc);setProgress(38,'Prot');const prot=aProt(doc,html);setProgress(40,'Obf');const obf=aObf(html);setProgress(44,'Pag');analysisResult.pagination=aPag(doc,base,targetUrl);setProgress(48,'QP');analysisResult.queryParams=aQP(doc,base);setProgress(55,'Cards');analysisResult.videoCards=aCards(doc,base);setProgress(62,'JS dep');const jsd=aJSD(doc,html,analysisResult.videoCards.found,fw);setProgress(66,'Compat');analysisResult.compatibility=assessCompatibility(jsd,prot,analysisResult.videoCards,null,obf);setProgress(70,'JS Nav');analysisResult.navigation=parseJsNavigation(doc,html,base);setProgress(78,'Video');const svUrl=analysisResult.videoCards.sampleCards?.[0]?.link;analysisResult.videoPage=svUrl?await aVP(svUrl,base):{analyzed:false};
+async function runFullAnalysis(){const proxyMode=($('proxySelect')||{}).value;if(proxyMode==='direct-test'){return runDirectTest()}const ui=$('targetUrl'),targetUrl=(ui?.value.trim()||'')||DEFAULT_TARGET_URL;if(!targetUrl){setStatus('❌ URL!','error');return}try{new URL(targetUrl)}catch{setStatus('❌ Bad URL','error');return}if(ui)ui.value=targetUrl;const base=baseOf(targetUrl),w=getW();const btn=$('btnAnalyze');if(btn){btn.disabled=true;btn.textContent='⏳'}$('results').style.display='none';updCI('hidden');updW(!!w);transportLog=[];const pb=$('progress-bar');if(pb)pb.classList.remove('cors-error','warning','worker');analysisResult={_meta:{analyzedUrl:targetUrl,baseUrl:base,analyzedAt:new Date().toISOString(),workerUsed:w||'нет',userAgent:getUA(),testWord:getTestWord(),tool:'v3.4'}};try{setStatus('📥','loading');setProgress(10,'📡');let html;try{html=await fetchPage(targetUrl)}catch(e){setProgress(10,'❌','cors-error');setStatus('❌ '+e.message,'error');analysisResult._error={type:isCE(e)?'CORS':'FETCH',message:e.message};analysisResult._transportLog=transportLog;displayResults(analysisResult);return}const doc=parseH(html);setProgress(20,(html.length/1024).toFixed(0)+'KB');setProgress(22,'DOM');const dom=aDom(doc);setProgress(25,'Enc');analysisResult.encoding=aEnc(doc);setProgress(27,'Meta');analysisResult.meta=aMeta(doc);setProgress(30,'FW');const fw=aFW(doc,html);setProgress(34,'API');const api=aAPI(doc);setProgress(38,'Prot');const prot=aProt(doc,html);setProgress(40,'Obf');const obf=aObf(html);setProgress(44,'Pag');analysisResult.pagination=aPag(doc,base,targetUrl);setProgress(48,'QP');analysisResult.queryParams=aQP(doc,base);setProgress(55,'Cards');analysisResult.videoCards=aCards(doc,base);setProgress(62,'JS dep');const jsd=aJSD(doc,html,analysisResult.videoCards.found,fw);setProgress(66,'Compat');analysisResult.compatibility=assessCompatibility(jsd,prot,analysisResult.videoCards,null,obf);setProgress(70,'JS Nav');analysisResult.navigation=parseJsNavigation(doc,html,base);setProgress(78,'Video');const svUrl=analysisResult.videoCards.sampleCards?.[0]?.link;analysisResult.videoPage=svUrl?await aVP(svUrl,base):{analyzed:false};
     // Update compat with video page data
     analysisResult.compatibility=assessCompatibility(jsd,prot,analysisResult.videoCards,analysisResult.videoPage,obf);
     setProgress(88,'Synth');analysisResult.architecture=synth(dom,fw,api,prot,obf,jsd,analysisResult.videoCards,analysisResult.videoPage);setProgress(94,'Report');analysisResult._summary={siteType:analysisResult.architecture.siteType,siteTypeLabel:analysisResult.architecture.siteTypeLabel,complexity:analysisResult.architecture.complexity,complexityLabel:analysisResult.architecture.complexityLabel,jsRequired:jsd.jsRequired,encoding:analysisResult.encoding.charset,hasPagination:analysisResult.pagination.pagination.found,paginationPattern:analysisResult.pagination.pagination.pattern,videoCardsFound:analysisResult.videoCards.totalCardsFound,fieldsFound:Object.entries(analysisResult.videoCards.structure).filter(([_,v])=>v.css).map(([k])=>k),videoSourceFound:analysisResult.videoPage.videoSources?.found||false,videoSourceMethods:analysisResult.videoPage.videoSources?.methods||[],categoriesCount:analysisResult.navigation.categories.totalCount,categoriesSource:analysisResult.navigation.categories.source,sortingOptions:analysisResult.navigation.sorting.fromJs.length||analysisResult.navigation.sorting.fromHtml.length,searchParamNames:analysisResult.navigation.search.paramNames,testWord:getTestWord(),frameworks:fw,protection:{cloudflare:prot.cloudflare,cloudflareTurnstile:prot.cloudflareTurnstile,ddosGuard:prot.ddosGuard,recaptcha:prot.recaptcha,drm:prot.drm,drmDetails:prot.drmDetails,ageGate:prot.ageGate?.detected?prot.ageGate:null,authRequired:prot.authRequired}};analysisResult._transportLog=transportLog;displayResults(analysisResult);setProgress(100,'✅');setStatus('✅ Готово!','success')}catch(e){setStatus('❌ '+e.message,'error');analysisResult._transportLog=transportLog;displayResults(analysisResult)}finally{if(btn){btn.disabled=false;btn.textContent='🚀 Полный анализ'}}}
@@ -292,4 +537,4 @@ function clip(text){navigator.clipboard.writeText(text).then(()=>setStatus('📋
 function copyResults(){if(analysisResult)clip(JSON.stringify(analysisResult,null,2))}
 function copyArchitecture(){if(!analysisResult)return;const nav=analysisResult.navigation,arch=analysisResult.architecture,vc=analysisResult.videoCards;const archOnly={siteType:arch?.siteType,siteTypeLabel:arch?.siteTypeLabel,complexity:arch?.complexity,complexityLabel:arch?.complexityLabel,jsRequired:arch?.jsDependency?.jsRequired,recommendation:arch?.recommendation,compatibility:analysisResult.compatibility,urlScheme:nav?.urlScheme,categories:nav?.categories?.merged,categoriesSource:nav?.categories?.source,categoriesCount:nav?.categories?.totalCount,sorting:nav?.sorting?.fromJs?.length?nav.sorting.fromJs:nav?.sorting?.fromHtml,search:{paramNames:nav?.search?.paramNames,testWord:nav?.search?.testWord,exampleUrls:nav?.search?.exampleUrls},selectors:vc?.found?vc.structure:null,cardSelector:vc?.cardSelector,cardXPath:vc?.cardXPath,videoUrlPattern:analysisResult.videoPage?.urlStructure?.pattern,videoMethods:analysisResult.videoPage?.videoSources?.methods,videoSources:analysisResult.videoPage?.videoSources?.sources?.map(s=>({type:s.type,foundIn:s.foundIn,priority:s.priority,tokenized:s.tokenized})),ageGate:arch?.protection?.ageGate||null,drm:arch?.protection?.drm?arch.protection.drmDetails:null};clip(JSON.stringify(archOnly,null,2));setStatus('🏗️ Архитектура!','success')}
 
-document.addEventListener('DOMContentLoaded',()=>{const ui=$('targetUrl');if(DEFAULT_TARGET_URL&&ui&&!ui.value)ui.value=DEFAULT_TARGET_URL;if(ui)ui.addEventListener('keypress',e=>{if(e.key==='Enter')runFullAnalysis()});const ps=$('proxySelect');if(ps)ps.addEventListener('change',()=>{const h=$('proxyHint');if(h)h.textContent={'auto':'Прямой→Worker→прокси','':'Прямой'}[ps.value]||''});const wi=$('workerUrl');if(wi){const sv=localStorage.getItem('aWU');if(sv)wi.value=sv;else if(!wi.value)wi.value=DEFAULT_WORKER_URL;updW(!!wi.value.trim());wi.addEventListener('input',()=>updW(!!wi.value.trim()));wi.addEventListener('change',()=>{const v=wi.value.trim();if(v)localStorage.setItem('aWU',v);else localStorage.removeItem('aWU')})}const ua=$('uaSelect'),uc=$('uaCustom');if(ua&&uc)ua.addEventListener('change',()=>{uc.style.display=ua.value==='custom'?'block':'none'})});
+document.addEventListener('DOMContentLoaded',()=>{const ui=$('targetUrl');if(DEFAULT_TARGET_URL&&ui&&!ui.value)ui.value=DEFAULT_TARGET_URL;if(ui)ui.addEventListener('keypress',e=>{if(e.key==='Enter')runFullAnalysis()});const ps=$('proxySelect');if(ps)ps.addEventListener('change',()=>{const h=$('proxyHint');if(h){const hints={'auto':'🔄 Прямой → Worker → 6 прокси','':'🔗 Только прямой запрос','direct-test':'🧪 Диагностика: проверит CORS, SSR, защиту, видео без прокси'};h.textContent=hints[ps.value]||ps.value.split('/')[2]||''}});const wi=$('workerUrl');if(wi){const sv=localStorage.getItem('aWU');if(sv)wi.value=sv;else if(!wi.value)wi.value=DEFAULT_WORKER_URL;updW(!!wi.value.trim());wi.addEventListener('input',()=>updW(!!wi.value.trim()));wi.addEventListener('change',()=>{const v=wi.value.trim();if(v)localStorage.setItem('aWU',v);else localStorage.removeItem('aWU')})}const ua=$('uaSelect'),uc=$('uaCustom');if(ua&&uc)ua.addEventListener('change',()=>{uc.style.display=ua.value==='custom'?'block':'none'})});
