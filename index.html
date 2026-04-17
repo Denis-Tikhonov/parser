@@ -3,63 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Media Parser Expert v4.0</title>
+    <title>Site Structure Analyzer v4.0.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container">
-        <header>
-            <h1>Media Analyzer <span class="badge">v4.0 PRO</span></h1>
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="main">Анализатор</button>
-                <button class="tab-btn" data-tab="devtools">Dev Tools (Config)</button>
-                <button class="tab-btn" data-tab="trace">Трассировка</button>
-            </div>
-        </header>
+<div class="container">
+    <h1>🔍 Site Structure Analyzer <span class="ver">v4.0.0</span></h1>
+    <p class="desc">Player Structure · Quality Map · CDN Whitelist · JS Config · Parser Flow · Templates</p>
 
-        <main>
-            <section id="main" class="tab-content active">
-                <div class="input-group">
-                    <input type="text" id="targetUrl" placeholder="https://example.com/video/123...">
-                    <button id="analyzeBtn">Анализировать</button>
-                </div>
-                
-                <div id="statusPanel" class="hidden">
-                    <div class="warning-box" id="tokenWarning">
-                        ⚠️ <strong>Внимание:</strong> Обнаружены динамические токены (Time-bound). Обрезка параметров запрещена.
-                    </div>
-                    <div class="info-grid">
-                        <div class="card">
-                            <h3>Whitelist Домены</h3>
-                            <ul id="whitelistResult"></ul>
-                        </div>
-                        <div class="card">
-                            <h3>Path Pattern</h3>
-                            <code id="pathPattern">/videos/{id}/</code>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="results-layout">
-                    <div id="extractionLog"></div>
-                </div>
-            </section>
-
-            <section id="devtools" class="tab-content">
-                <div class="config-header">
-                    <h3>Worker JS Generator</h3>
-                    <button onclick="copyConfig()">Копировать код</button>
-                </div>
-                <pre id="workerCode">// Выберите видео для генерации конфига...</pre>
-                
-                <div class="expert-mode-toggle">
-                    <label>
-                        <input type="checkbox" id="hideNoise" checked> Скрывать избыточные элементы (scripts/div)
-                    </label>
-                </div>
-            </section>
-        </main>
+    <div class="worker-block">
+        <div class="worker-block-header">
+            <label for="workerUrl">⚡ Worker</label>
+            <span id="workerStatusBadge" class="worker-badge inactive">○</span>
+        </div>
+        <div class="worker-input-row">
+            <input type="text" id="workerUrl" value="https://zonaproxy.777b737.workers.dev" autocomplete="off" spellcheck="false">
+        </div>
     </div>
-    <script src="script.js"></script>
+
+    <div class="input-row-2">
+        <div class="input-group flex-3">
+            <label for="targetUrl">URL:</label>
+            <input type="text" id="targetUrl" placeholder="https://example.com/" value="">
+        </div>
+        <div class="input-group flex-1">
+            <label for="testWord">Тест-слово:</label>
+            <input type="text" id="testWord" value="wife" placeholder="wife">
+        </div>
+    </div>
+
+    <div class="input-row-2">
+        <div class="input-group flex-2">
+            <label for="proxySelect">Транспорт:</label>
+            <select id="proxySelect">
+                <option value="auto" selected>🔄 Авто</option>
+                <option value="">🔗 Прямой</option>
+                <option value="direct-test">🧪 Тест без прокси</option>
+                <option value="https://api.allorigins.win/raw?url=">allorigins</option>
+                <option value="https://corsproxy.io/?">corsproxy</option>
+                <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs</option>
+            </select>
+            <p id="proxyHint" class="proxy-hint"></p>
+        </div>
+        <div class="input-group flex-2">
+            <label for="uaSelect">User-Agent:</label>
+            <select id="uaSelect">
+                <option value="desktop" selected>🖥 Desktop</option>
+                <option value="mobile">📱 Mobile</option>
+                <option value="bot">🤖 Bot</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="buttons">
+        <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
+        <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
+        <button id="btnCopyArch" onclick="copyArchitecture()" disabled>🏗️ Архитектура</button>
+        <button id="btnCopyWhitelist" onclick="copyWhitelist()" disabled>📡 Whitelist</button>
+    </div>
+
+    <div id="corsIndicator" class="cors-indicator" style="display:none"></div>
+    <div id="status" class="status"></div>
+    <div id="progress-container" class="progress-container" style="display:none">
+        <div id="progress-bar" class="progress-bar"></div>
+        <span id="progress-text" class="progress-text">0%</span>
+    </div>
+
+    <div id="results" class="results" style="display:none">
+        <h2>📊 Результаты</h2>
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
+            <button class="tab" onclick="showTab('formatted')">JSON</button>
+            <button class="tab" onclick="showTab('raw')">Raw</button>
+        </div>
+        <div id="tab-arch" class="tab-content active"><div id="archReport"></div></div>
+        <div id="tab-formatted" class="tab-content"><pre id="jsonFormatted"></pre></div>
+        <div id="tab-raw" class="tab-content"><textarea id="jsonRaw" readonly></textarea></div>
+    </div>
+</div>
+<script src="parser.js"></script>
 </body>
 </html>
