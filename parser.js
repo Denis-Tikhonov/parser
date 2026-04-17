@@ -1,239 +1,94 @@
 /**
- * SITE ANALYZER PRO v4.0.0
- * Модуль: Smart Extractor & Worker DevKit
+ * SITE ANALYZER PRO v4.0.0 (Tuning Update)
+ * Транспорт: Direct -> Worker -> Proxy (Fallback system)
  */
 
-const state = {
-    results: null,
-    whitelist: new Set(),
-    targetHost: ''
-};
-
-async function runAnalysis() {
-    const url = document.getElementById('targetUrl').value.trim();
-    if (!url) return alert('Введите URL');
-    
-    state.targetHost = new URL(url).hostname;
-    resetUI();
-    updateProgress(10, 'Загрузка страницы...');
-
-    try {
-        const html = await fetchPage(url);
-        const doc = new DOMParser().parseFromString(html, 'text/html');
-        
-        updateProgress(30, 'Анализ структуры и защиты...');
-        const analysis = {
-            protection: analyzeProtection(doc, html),
-            videoSources: await analyzeVideoSources(doc, html),
-            engine: detectEngine(doc, html),
-            dom: analyzeDOM(doc)
-        };
-
-        state.results = analysis;
-        renderResults(analysis);
-        updateProgress(100, 'Готово!');
-    } catch (e) {
-        document.getElementById('status').innerHTML = `<span class="error">Ошибка: ${e.message}</span>`;
-        updateProgress(100, 'Ошибка', 'error');
-    }
-}
-
-// --- FETCH & CORS ---
+// --- ТРАНСПОРТНЫЙ СЛОЙ (Возврат логики v3.4) ---
 async function fetchPage(url) {
-    // В v4.0.0 по умолчанию пробуем воркер для глубокого анализа, если он указан
     const worker = document.getElementById('workerUrl').value;
-    const fetchUrl = worker ? `${worker}/?url=${encodeURIComponent(url)}` : url;
-    
-    const resp = await fetch(fetchUrl);
-    if (!resp.ok) throw new Error('Сайт недоступен (CORS или 404)');
-    return await resp.text();
+    const proxyList = [
+        { n: 'Direct', u: url, direct: true },
+        { n: 'Worker', u: `${worker}/?url=${encodeURIComponent(url)}`, direct: false },
+        { n: 'AllOrigins', u: `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, direct: false },
+        { n: 'CorsProxy', u: `https://corsproxy.io/?${encodeURIComponent(url)}`, direct: false }
+    ];
+
+    for (const p of proxyList) {
+        try {
+            console.log(`[Transport] Попытка: ${p.n}`);
+            const resp = await fetch(p.u);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            
+            const html = await resp.text();
+            if (html.length < 500) throw new Error('Empty/Small response');
+            
+            // Если успех, запоминаем домен для whitelist (если это не прокси)
+            if (p.direct) state.whitelist.add(new URL(url).hostname);
+            
+            return html;
+        } catch (e) {
+            console.warn(`[Transport] ${p.n} не прошел: ${e.message}`);
+        }
+    }
+    throw new Error('Все методы доступа (Direct/Worker/Proxy) заблокированы.');
 }
 
-// --- SMART EXTRACTOR ---
+// --- УЛУЧШЕННЫЙ SMART EXTRACTOR ---
 async function analyzeVideoSources(doc, html) {
     const sources = [];
-    
-    // 1. Поиск <source>
-    doc.querySelectorAll('video source, source').forEach(el => {
-        const src = el.getAttribute('src');
-        if (src && src.includes('.mp4')) {
-            sources.push({
-                url: resolveUrl(src),
-                type: 'html5_tag',
-                quality: el.getAttribute('size') || el.getAttribute('data-res') || 'auto'
-            });
+    const q = {};
+
+    // 1. KVS / Variable extraction (Улучшенные регулярки)
+    const vars = ['video_url', 'video_alt_url', 'file', 'video_hls'];
+    vars.forEach(v => {
+        const re = new RegExp(`${v}:\\s*['"]([^'"]+)['"]`, 'g');
+        let m;
+        while ((m = re.exec(html)) !== null) {
+            sources.push({ url: m[1].replace(/\\/g, ''), type: 'kvs_var', quality: v });
         }
     });
 
-    // 2. Open Graph
-    const og = doc.querySelector('meta[property="og:video"]');
-    if (og) sources.push({ url: og.getAttribute('content'), type: 'og_meta', quality: 'HD' });
-
-    // 3. KVS / JS Patterns
-    const kvsMatch = html.match(/video_url:\s*['"]([^'"]+)['"]/);
-    if (kvsMatch) sources.push({ url: kvsMatch[1].replace(/\\/g,''), type: 'kvs_var', quality: 'SD' });
-
-    // Обработка доменов для Whitelist
-    sources.forEach(s => {
-        try { state.whitelist.add(new URL(s.url).hostname); } catch(e) {}
+    // 2. HTML5 Source
+    doc.querySelectorAll('source[src]').forEach(s => {
+        sources.push({ url: s.src, type: 'source_tag', quality: s.getAttribute('size') || 'SD' });
     });
 
-    // Проверка здоровья ссылок (Health Report)
+    // 3. Health check & Whitelist
     for (let s of sources) {
-        s.health = await checkLinkHealth(s.url);
+        try { 
+            state.whitelist.add(new URL(s.url).hostname); 
+            s.health = await checkLinkHealth(s.url);
+        } catch(e) {}
     }
 
     return sources;
 }
 
-async function checkLinkHealth(url) {
-    const start = Date.now();
-    try {
-        // Проверка через Direct (проверка CORS)
-        const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
-        const isTokened = /[?&](token|expires|hash|cv|time)=/.test(url);
-        
-        return {
-            status: '200 OK (Probable)',
-            cors: 'Direct Blocked (Expected)',
-            isTokened,
-            redirect: false
-        };
-    } catch (e) {
-        return { status: 'Error/CORS', cors: 'Blocked', isTokened: false };
-    }
-}
-
-// --- WHITELIST GEN ---
-function renderWhitelist() {
-    const list = Array.from(state.whitelist);
-    const box = document.getElementById('whitelistBox');
-    document.getElementById('workerTools').style.display = 'block';
-    
-    box.innerHTML = `const ALLOWED_TARGETS = [<br>` + 
-        list.map(d => `  "${d}"`).join(',<br>') + 
-        `<br>];`;
-}
-
-// --- CODE GENERATOR ---
+// --- ГЕНЕРАТОР ПАРСЕРА (Умный перебор) ---
 function generateParserTemplate(analysis) {
     const host = state.targetHost;
-    let strategy = '';
+    
+    return `// Parser for ${host}
+// Generated by Site Analyzer Pro v4.0.0
 
-    if (analysis.engine === 'KVS') {
-        strategy = `// Strategy: KVS Engine detection
-    const m = html.match(/video_url:\\s*['"]([^'"]+)['"]/);
-    if (m) q['SD'] = m[1].replace(/\\\\/g, '');`;
-    } else {
-        strategy = `// Strategy: Global HTML5 detection
-    const sources = html.match(/<source[^>]+src="([^"]+)"/gi);
-    if (sources) {
-        sources.forEach(s => {
-            const url = s.match(/src="([^"]+)"/)[1];
-            q['HD'] = url;
-        });
-    }`;
-    }
-
-    return `/**
- * Parser for ${host}
- * Generated by Site Analyzer Pro v4.0.0
- */
 qualities: function(videoPageUrl, success, error) {
+    // Используем стандартную функцию получения данных
     httpGet(videoPageUrl, function(html) {
         const q = {};
         
-        ${strategy}
+        // 1. Поиск KVS переменных
+        const vars = ['video_url', 'video_alt_url', 'video_hls'];
+        vars.forEach(v => {
+            const m = html.match(new RegExp(v + ":\\s*['" + '"]([^' + "'" + '"]+)' + "['" + '"]'));
+            if (m) q[v] = m[1].replace(/\\\\/g, '');
+        });
+
+        // 2. Поиск через Regex (альтернатива)
+        const mp4 = html.match(/https?:\\/\\/[^"']+\\.mp4/);
+        if (mp4) q['MP4'] = mp4[0];
 
         if (Object.keys(q).length > 0) success({ qualities: q });
         else error('Video not found');
     }, error);
 }`;
-}
-
-// --- UI HELPERS ---
-function detectEngine(doc, html) {
-    if (html.includes('video_url:') || html.includes('kt_player')) return 'KVS';
-    if (html.includes('jwplayer')) return 'JWPlayer';
-    return 'Generic HTML5';
-}
-
-function analyzeProtection(doc, html) {
-    return {
-        cloudflare: html.includes('cloudflare') || html.includes('cf-turnstile'),
-        ageGate: /age|confirm|18\+/i.test(doc.body.innerText)
-    };
-}
-
-function analyzeDOM(doc) {
-    return {
-        divs: doc.querySelectorAll('div').length,
-        scripts: doc.querySelectorAll('script').length
-    };
-}
-
-function renderResults(res) {
-    document.getElementById('results').style.display = 'block';
-    renderWhitelist();
-    
-    // Health Table
-    let hHtml = `<h4>Health & Link Report</h4><table><tr><th>Type</th><th>Quality</th><th>Token</th><th>CORS</th></tr>`;
-    res.videoSources.forEach(s => {
-        hHtml += `<tr>
-            <td>${s.type}</td>
-            <td><code style="color:var(--accent)">${s.quality}</code></td>
-            <td>${s.health.isTokened ? '🔴 Yes (Short-lived)' : '🟢 No'}</td>
-            <td class="status-badge ${s.health.cors === 'Blocked' ? 'status-warn' : 'status-ok'}">${s.health.cors}</td>
-        </tr>`;
-    });
-    hHtml += `</table>`;
-    document.getElementById('healthReport').innerHTML = hHtml;
-
-    // Parser Code
-    document.getElementById('parserTemplate').textContent = generateParserTemplate(res);
-    
-    // Raw JSON
-    document.getElementById('jsonOutput').textContent = JSON.stringify(res, null, 2);
-
-    // Apply Expert Mode
-    if (document.getElementById('expertMode').checked) {
-        document.body.classList.add('expert-mode');
-    } else {
-        document.body.classList.remove('expert-mode');
-    }
-}
-
-function resolveUrl(href) {
-    try { return new URL(href, `https://${state.targetHost}`).href; } 
-    catch(e) { return href; }
-}
-
-function updateProgress(val, text, type) {
-    const bar = document.getElementById('progressBar');
-    const txt = document.getElementById('progressText');
-    bar.style.width = val + '%';
-    txt.textContent = text;
-    if (type === 'error') bar.style.background = 'var(--error)';
-}
-
-function switchTab(id) {
-    document.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelector(`[onclick="switchTab('${id}')"]`).classList.add('active');
-    document.getElementById('tab-' + id).classList.add('active');
-}
-
-function resetUI() {
-    state.whitelist.clear();
-    document.getElementById('results').style.display = 'none';
-    document.getElementById('workerTools').style.display = 'none';
-}
-
-function copyWhitelist() {
-    navigator.clipboard.writeText(document.getElementById('whitelistBox').innerText);
-    alert('Whitelist скопирован!');
-}
-
-function copyParserCode() {
-    navigator.clipboard.writeText(document.getElementById('parserTemplate').textContent);
-    alert('Шаблон парсера скопирован!');
 }
