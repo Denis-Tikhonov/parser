@@ -1,540 +1,239 @@
-// ================================================================
-// SITE STRUCTURE ANALYZER v3.4
-// +Совместимость, +Video priority, +Age Gate 3 типа,
-// +DRM detection, +Cloudflare Turnstile vs Basic
-// ================================================================
+/**
+ * SITE ANALYZER PRO v4.0.0
+ * Модуль: Smart Extractor & Worker DevKit
+ */
 
-const DEFAULT_TARGET_URL="";
-const DEFAULT_WORKER_URL="https://zonaproxy.777b737.workers.dev";
-let analysisResult=null,transportLog=[];
-const logT=(m,t='info')=>transportLog.push({time:new Date().toLocaleTimeString(),message:m,type:t});
-const $=id=>document.getElementById(id);
-const setStatus=(m,t='loading')=>{const e=$('status');if(e){e.textContent=m;e.className='status '+t}};
-const setProgress=(p,t,s)=>{const c=$('progress-container'),b=$('progress-bar'),x=$('progress-text');if(!c)return;c.style.display='block';b.style.width=p+'%';x.textContent=t||p+'%';b.classList.remove('cors-error','warning','worker');if(s)b.classList.add(s)};
-const baseOf=u=>{try{return new URL(u).origin}catch{return''}};
-const resolve=(h,b)=>{if(!h)return'';try{return new URL(h,b).href}catch{return h}};
-const uniq=a=>[...new Set(a.filter(Boolean))];
-const esc=t=>{if(!t)return'';const d=document.createElement('div');d.textContent=String(t);return d.innerHTML};
-const getTestWord=()=>($('testWord')?.value.trim()||'wife');
+const state = {
+    results: null,
+    whitelist: new Set(),
+    targetHost: ''
+};
 
-// ---- XPath ----
-function genXP(el){if(!el||el.nodeType!==1)return'';if(el.id)return`//*[@id="${el.id}"]`;const p=[];let c=el;while(c&&c.nodeType===1){let t=c.tagName.toLowerCase();if(c.className&&typeof c.className==='string'){const cl=c.className.trim().split(/\s+/)[0];if(cl&&cl.length>2&&!['col','row','item','div','block','wrap','container'].includes(cl)){p.unshift(`//${t}[contains(@class,"${cl}")]`);break}}let i=1,s=c.previousElementSibling;while(s){if(s.tagName===c.tagName)i++;s=s.previousElementSibling}p.unshift(`/${t}[${i}]`);c=c.parentElement}return p.join('')}
-function sXP(el){if(!el||el.nodeType!==1)return'';const t=el.tagName.toLowerCase();if(el.id)return`//*[@id="${el.id}"]`;if(el.className&&typeof el.className==='string'){const c=el.className.trim().split(/\s+/)[0];if(c)return`//${t}[contains(@class,"${c}")]`}return`//${t}`}
+async function runAnalysis() {
+    const url = document.getElementById('targetUrl').value.trim();
+    if (!url) return alert('Введите URL');
+    
+    state.targetHost = new URL(url).hostname;
+    resetUI();
+    updateProgress(10, 'Загрузка страницы...');
 
-// ---- UA ----
-const UA={desktop:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',mobile:'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Mobile Chrome/120.0.0.0',bot:'Googlebot/2.1'};
-function getUA(){const s=$('uaSelect');if(!s)return UA.desktop;if(s.value==='custom'){const c=$('uaCustom');return c?.value.trim()||UA.desktop}return UA[s.value]||UA.desktop}
-
-// ---- Worker / CORS / Fetch (без изменений) ----
-const getW=()=>{const i=$('workerUrl');return i?i.value.trim().replace(/\/$/,''):''};
-const updW=h=>{const b=$('workerStatusBadge');if(b){b.textContent=h?'✦':'○';b.className='worker-badge '+(h?'active':'inactive')}};
-function updCI(state,detail){const el=$('corsIndicator');if(!el)return;const m={'trying-direct':['🔗 Прямое...','trying'],'direct-ok':['✅ OK','direct-ok'],'trying-worker':['⚡ Worker...','trying'],'worker-ok':['✅ W '+(detail||''),'worker-ok'],'cors-detected':['🛡️ CORS→прокси','cors-blocked'],'trying-proxy':['🔄 '+(detail||''),'cors-blocked'],'proxy-ok':['✅ '+(detail||''),'proxy-ok'],'all-failed':['❌ Заблокировано','all-failed'],hidden:['','']};const s=m[state]||m.hidden;el.textContent=s[0];el.className='cors-indicator '+s[1];el.style.display=state==='hidden'?'none':'block'}
-const proxies=()=>[{n:'allorigins',u:'https://api.allorigins.win/raw?url='},{n:'corsproxy',u:'https://corsproxy.io/?'},{n:'codetabs',u:'https://api.codetabs.com/v1/proxy?quest='},{n:'thingproxy',u:'https://thingproxy.freeboard.io/fetch/'},{n:'cors-anywhere',u:'https://cors-anywhere.herokuapp.com/'},{n:'cors.bridged',u:'https://cors.bridged.cc/'}];
-const isCE=e=>{if(!e)return false;const m=(e.message||'').toLowerCase();return m.includes('failed to fetch')||m.includes('networkerror')||m.includes('load failed')||e.name==='TypeError'};
-async function fD(url){const a=new AbortController,t=setTimeout(()=>a.abort(),10000);try{const r=await fetch(url,{headers:{Accept:'text/html,*/*'},signal:a.signal});clearTimeout(t);if(!r.ok)throw new Error('HTTP '+r.status);const h=await r.text();if(h.length<50)throw new Error('Empty');return h}catch(e){clearTimeout(t);throw e}}
-async function fW(url){const w=getW();if(!w)throw new Error('No W');const a=new AbortController,t=setTimeout(()=>a.abort(),15000);try{const r=await fetch(w+'/?url='+encodeURIComponent(url)+'&ua='+encodeURIComponent(getUA()),{headers:{Accept:'text/html,*/*'},signal:a.signal});clearTimeout(t);if(!r.ok)throw new Error('W'+r.status);const h=await r.text();if(h.length<50)throw new Error('Empty');return h}catch(e){clearTimeout(t);throw e}}
-async function fP(url,pfx){const a=new AbortController,t=setTimeout(()=>a.abort(),15000);const raw=pfx.includes('thingproxy')||pfx.includes('cors-anywhere')||pfx.includes('cors.bridged');try{const r=await fetch(raw?pfx+url:pfx+encodeURIComponent(url),{headers:{Accept:'text/html,*/*'},signal:a.signal});clearTimeout(t);if(!r.ok)throw new Error('HTTP '+r.status);const h=await r.text();if(h.length<50)throw new Error('Empty');return h}catch(e){clearTimeout(t);throw e}}
-async function fetchPage(url){const mode=($('proxySelect')||{}).value||'auto',w=getW();if(mode===''){logT('Direct');updCI('trying-direct');try{const h=await fD(url);logT('✅','success');updCI('direct-ok');return h}catch(e){logT('❌ '+e.message,'fail');updCI('all-failed');throw e}}if(mode==='auto'){try{logT('1/3 Direct');updCI('trying-direct');setProgress(12,'🔗');const h=await fD(url);logT('✅','success');updCI('direct-ok');return h}catch(e){logT(isCE(e)?'🛡️ CORS':e.message,'warning')}if(w){try{logT('2/3 Worker');updCI('trying-worker');setProgress(14,'⚡','worker');const h=await fW(url);logT('✅ W','success');updCI('worker-ok',w);return h}catch(e){logT('W:'+e.message,'fail')}}updCI('cors-detected');const px=proxies();for(let i=0;i<px.length;i++){try{logT('3/3 '+px[i].n);updCI('trying-proxy',px[i].n);setProgress(15+i*2,px[i].n,'warning');const h=await fP(url,px[i].u);logT('✅ '+px[i].n,'success');updCI('proxy-ok',px[i].n);return h}catch(e){logT('❌ '+px[i].n,'fail')}}updCI('all-failed');throw new Error('All blocked')}if(w){try{const h=await fW(url);logT('✅ W','success');updCI('worker-ok',w);return h}catch(e){logT('W:'+e.message,'warning')}}try{const h=await fP(url,mode);updCI('proxy-ok',mode.split('/')[2]);return h}catch(e){updCI('all-failed');throw e}}
-async function extractVW(u){const w=getW();if(!w)return null;try{const r=await fetch(w+'/?url='+encodeURIComponent(u)+'&mode=extract');if(!r.ok)return null;const d=await r.json();return d.success&&d.videoUrl?d.videoUrl:null}catch{return null}}
-const parseH=h=>new DOMParser().parseFromString(h,'text/html');
-
-// ================================================================
-// ANALYZERS
-// ================================================================
-function aDom(doc){const a=doc.querySelectorAll('*').length,s=doc.querySelectorAll('script');return{totalElements:a,scripts:s.length,inlineScriptSize:Array.from(s).reduce((x,e)=>x+(e.textContent||'').length,0),externalScripts:Array.from(s).filter(s=>s.src).map(s=>s.src).slice(0,15),images:doc.querySelectorAll('img').length,links:doc.querySelectorAll('a[href]').length,forms:doc.querySelectorAll('form').length,iframes:doc.querySelectorAll('iframe').length}}
-function aFW(doc,html){const f=[],src=html+Array.from(doc.querySelectorAll('script')).map(s=>s.textContent).join('\n');const ck=[['React',['data-reactroot','_reactRootContainer','ReactDOM']],['Next.js',['__NEXT_DATA__','_next/static']],['Vue.js',['__vue__','v-cloak','data-v-','createApp']],['Nuxt.js',['__NUXT__','_nuxt/']],['Angular',['ng-app','ng-version']],['jQuery',['jquery.min.js','jQuery']],['WordPress',['wp-content','wp-json']],['Cloudflare',['cf-browser-verification','challenges.cloudflare.com']],['DDoS-Guard',['ddos-guard']],['JW Player',['jwplayer']],['Video.js',['videojs','video-js']],['HLS.js',['hls.js','Hls.']]];for(const[n,ps]of ck)for(const p of ps)if(src.includes(p)){f.push(n);break}return uniq(f)}
-function aAPI(doc){const src=Array.from(doc.querySelectorAll('script')).map(s=>s.textContent).join('\n'),eps=[];for(const p of[/fetch\s*\(\s*['"`](\/[^'"`]+)/gi,/axios\.\w+\(\s*['"`](\/[^'"`]+)/gi]){let m;while((m=p.exec(src)))if(m[1])eps.push(m[1]);p.lastIndex=0}const sv=[];for(const p of[/__NEXT_DATA__/,/__NUXT__/,/__INITIAL_STATE__/])if(p.test(src))sv.push(p.source.replace(/\\/g,''));return{endpoints:uniq(eps).slice(0,15),stateVars:sv}}
-
-// ================================================================
-// НОВОЕ: PROTECTION v2 — Age Gate 3 типа + DRM + Turnstile
-// ================================================================
-function aProt(doc, html) {
-    const r = { cloudflare: false, cloudflareTurnstile: false, cloudflareBasic: false, ddosGuard: false, recaptcha: false, drm: false, drmDetails: [], authRequired: false, ageGate: null, cookies: [] };
-    const lc = html.toLowerCase();
-    const src = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n');
-    const combined = lc + src.toLowerCase();
-
-    // --- Cloudflare: Turnstile vs Basic ---
-    if (lc.includes('challenges.cloudflare.com') || lc.includes('cf-browser-verification') || lc.includes('cf_clearance')) {
-        r.cloudflare = true;
-        if (combined.includes('turnstile') || combined.includes('cf-turnstile') || lc.includes('challenges.cloudflare.com/turnstile')) {
-            r.cloudflareTurnstile = true;
-        } else {
-            r.cloudflareBasic = true;
-        }
-    }
-    if (lc.includes('ddos-guard')) r.ddosGuard = true;
-    if (combined.includes('recaptcha') || combined.includes('hcaptcha')) r.recaptcha = true;
-
-    // --- DRM Detection ---
-    const drmPatterns = [
-        { name: 'Widevine', patterns: ['widevine', 'com.widevine'] },
-        { name: 'PlayReady', patterns: ['playready', 'com.microsoft.playready'] },
-        { name: 'FairPlay', patterns: ['fairplay', 'com.apple.fps'] },
-        { name: 'ClearKey', patterns: ['clearkey', 'org.w3.clearkey'] },
-        { name: 'EME API', patterns: ['requestmedialkeysystemaccess', 'encrypted-media', 'mediakeysession'] },
-    ];
-    for (const d of drmPatterns) {
-        for (const p of d.patterns) {
-            if (combined.includes(p)) { r.drm = true; r.drmDetails.push(d.name); break; }
-        }
-    }
-    r.drmDetails = uniq(r.drmDetails);
-
-    // --- Auth detection ---
-    const authForms = doc.querySelectorAll('form[action*="login"],form[action*="signin"],form[action*="auth"],form[class*="login"],form[class*="auth"]');
-    if (authForms.length > 0) r.authRequired = true;
-    if (combined.includes('login_required') || combined.includes('must_login') || combined.includes('authentication_required')) r.authRequired = true;
-
-    // --- Cookies ---
-    const cp = /(?:setCookie|document\.cookie\s*=\s*['"`])([^'"`=;]+)/gi;
-    let cm; while ((cm = cp.exec(src))) r.cookies.push(cm[1]);
-    r.cookies = uniq(r.cookies).slice(0, 10);
-
-    // --- Age Gate v2: 3 типа ---
-    const ageCookieNames = ['age_verified', 'disclaimer', 'over18', 'agegate', 'is_adult', 'mature', 'age_confirm', 'age_gate', 'adult_confirm', 'agecheck'];
-    let ageType = null, ageDetails = {};
-
-    // Тип 2: POST-форма
-    const ageForms = doc.querySelectorAll('form');
-    for (const form of ageForms) {
-        const action = (form.getAttribute('action') || '').toLowerCase();
-        const method = (form.getAttribute('method') || 'GET').toUpperCase();
-        const formHtml = form.innerHTML.toLowerCase();
-        if ((action.includes('age') || action.includes('verify') || action.includes('confirm') || action.includes('disclaimer')) && method === 'POST') {
-            ageType = 'post-form';
-            ageDetails = { action: form.getAttribute('action'), method: 'POST', note: 'POST-подтверждение возраста — нужен предварительный запрос' };
-            break;
-        }
-        if (formHtml.includes('18') && (formHtml.includes('enter') || formHtml.includes('confirm') || formHtml.includes('войти') || formHtml.includes('подтвердить')) && method === 'POST') {
-            ageType = 'post-form';
-            ageDetails = { action: form.getAttribute('action') || '/', method: 'POST', note: 'Форма подтверждения возраста' };
-            break;
-        }
-    }
-
-    // Тип 1: Cookie-флаг
-    if (!ageType) {
-        for (const cn of ageCookieNames) {
-            if (combined.includes(cn)) {
-                ageType = 'cookie-flag';
-                // Try to find cookie value
-                const valPat = new RegExp(cn + '\\s*[=:]\\s*["\']?([^"\'\\s;,}{]+)', 'i');
-                const valMatch = combined.match(valPat);
-                ageDetails = {
-                    cookieName: cn,
-                    cookieValue: valMatch ? valMatch[1] : '1',
-                    note: `Добавьте Cookie: ${cn}=${valMatch ? valMatch[1] : '1'} в заголовки запроса`
-                };
-                break;
-            }
-        }
-    }
-
-    // Тип 3: JS-оверлей
-    if (!ageType) {
-        const ageSelectors = ['#age-verify', '#age-gate', '.age-verify', '.age-gate', '[class*="age-verif"]', '[class*="age-gate"]', '#disclaimer', '[class*="disclaimer"]'];
-        for (const s of ageSelectors) { try { if (doc.querySelector(s)) { ageType = 'js-overlay'; ageDetails = { selector: s, note: 'CSS/JS-оверлей — контент уже в HTML, парсинг не затронут' }; break; } } catch {} }
-    }
-    if (!ageType) {
-        const body = doc.body ? doc.body.textContent : '';
-        if (/(?:мне\s*(?:уже\s*)?18|i\s*am\s*(?:over\s*)?18|18\+|старше\s*18|confirm.*age)/i.test(body)) {
-            ageType = 'js-overlay';
-            ageDetails = { note: 'Текст подтверждения возраста найден — вероятно оверлей' };
-        }
-    }
-
-    if (ageType) {
-        const impactMap = { 'cookie-flag': 'low', 'post-form': 'medium', 'js-overlay': 'none' };
-        r.ageGate = { detected: true, type: ageType, impact: impactMap[ageType] || 'unknown', ...ageDetails };
-    }
-
-    return r;
-}
-
-function aObf(html){const r={base64Urls:[],obfPat:[],tokenUrls:[]};let m;const at=/atob\s*\(\s*['"`]([A-Za-z0-9+/=]{20,})['"`]\s*\)/gi;while((m=at.exec(html)))try{const d=atob(m[1]);if(/https?:\/\/.*\.(mp4|m3u8)/.test(d))r.base64Urls.push({dec:d.substring(0,200),type:d.includes('.m3u8')?'HLS':'MP4'})}catch{}if(/String\.fromCharCode/.test(html))r.obfPat.push('String.fromCharCode');const tp=/https?:\/\/[^\s"'<>]+\.(mp4|m3u8)[^\s"'<>]*(?:token|expires|hash|sign)=[^\s"'<>]+/gi;while((m=tp.exec(html)))r.tokenUrls.push(m[0].substring(0,200));return r}
-function aJSD(doc,html,cf,fw){const r={jsRequired:'no',catalog:'no',player:'no',ev:[]};const root=doc.querySelector('#app,#root,#__next,#__nuxt,[data-reactroot]');if(root&&root.children.length<=3){r.ev.push('SPA root');r.catalog='yes'}const ns=doc.querySelector('noscript');if(ns&&/enable|javascript/i.test(ns.textContent)){r.ev.push('<noscript>');r.catalog='yes'}const dt=doc.querySelectorAll('*').length;if(dt<80){r.ev.push(`DOM ${dt}`);r.catalog='yes'}else if(dt<200&&!cf){r.ev.push(`Small DOM ${dt}`);r.catalog='yes'}if(cf){r.ev.push('Cards in HTML');r.catalog='no'}if(fw.some(f=>['JW Player','Video.js','HLS.js'].includes(f))){r.player='yes';r.ev.push('JS player')}r.jsRequired=r.catalog==='yes'?'yes':r.catalog==='partial'||r.player==='yes'?'partial':'no';return r}
-function aEnc(doc){const mc=doc.querySelector('meta[charset]'),mct=doc.querySelector('meta[http-equiv="Content-Type"]');let cs='N/A';if(mc)cs=mc.getAttribute('charset');else if(mct){const m=(mct.getAttribute('content')||'').match(/charset=([^\s;]+)/i);if(m)cs=m[1]}return{charset:cs.toUpperCase()}}
-function aMeta(doc){const m={title:doc.title};const d=doc.querySelector('meta[name="description"]');if(d)m.description=d.getAttribute('content');const l=doc.documentElement.getAttribute('lang');if(l)m.language=l;return m}
-function aPag(doc,base,target){const r={pagination:{found:false,type:null,pattern:null,examples:[]}};let pl=[],ms='';for(const s of['.pagination a','.pager a','nav.pagination a','.paginator a','a.page-link','[class*="pagination"] a'])try{const l=doc.querySelectorAll(s);if(l.length){ms=s;l.forEach(a=>{const h=a.getAttribute('href');if(h)pl.push(h)});break}}catch{}if(!pl.length){doc.querySelectorAll('a[href]').forEach(a=>{const h=a.getAttribute('href')||'',t=a.textContent.trim();if(/[?&]page=\d+/i.test(h)||/\/page\/\d+/i.test(h)||(/\/\d+\/?$/.test(h)&&/^\d+$/.test(t)))pl.push(h)});if(pl.length)ms='pattern'}if(pl.length){r.pagination.found=true;r.pagination.selector=ms;r.pagination.examples=uniq(pl.map(h=>resolve(h,base))).slice(0,10);const s0=pl[0];if(/[?&]page=\d+/i.test(s0)){r.pagination.type='query';r.pagination.pattern='?page=N'}else if(/\/page\/\d+/i.test(s0)){r.pagination.type='path';r.pagination.pattern='/page/N/'}else{r.pagination.type='other';r.pagination.pattern=s0}}return r}
-function aQP(doc,base){const params={};doc.querySelectorAll('a[href]').forEach(a=>{try{const u=new URL(resolve(a.getAttribute('href'),base));u.searchParams.forEach((v,k)=>{if(!params[k])params[k]={vals:new Set(),cnt:0};params[k].vals.add(v);params[k].cnt++})}catch{}});const res=[];for(const[k,d]of Object.entries(params)){let cat='unknown';if(/^(page|p|pg|start|offset)$/i.test(k))cat='pagination';else if(/^(sort|order|orderby)$/i.test(k))cat='sorting';else if(/^(q|query|search|s|k|keyword|find)$/i.test(k))cat='search';else if(/^(cat|category|tag|genre|type|filter|c)$/i.test(k))cat='filter';res.push({param:k,category:cat,values:[...d.vals].slice(0,8),count:d.cnt})}res.sort((a,b)=>b.count-a.count);return res.slice(0,30)}
-
-// ================================================================
-// НОВОЕ: COMPATIBILITY ASSESSMENT
-// ================================================================
-function assessCompatibility(jsd, prot, vc, vp, obf) {
-    const items = [];
-    // SSR
-    items.push({ key: 'ssr', icon: jsd.jsRequired === 'no' ? '✅' : jsd.jsRequired === 'partial' ? '⚠️' : '❌', label: 'HTML без JS (SSR)', status: jsd.jsRequired === 'no' ? 'ok' : jsd.jsRequired === 'partial' ? 'warn' : 'fail', hint: jsd.jsRequired === 'no' ? 'Контент отдаётся в HTML' : jsd.jsRequired === 'partial' ? 'Каталог в HTML, плеер через JS' : 'SPA — нужен headless' });
-    // URL stability
-    const hasToken = vp?.videoSources?.sources?.some(s => s.tokenized);
-    items.push({ key: 'urlStable', icon: hasToken ? '⚠️' : vp?.videoSources?.found ? '✅' : '❌', label: 'URL видео стабилен', status: hasToken ? 'warn' : vp?.videoSources?.found ? 'ok' : 'fail', hint: hasToken ? 'URL токенизирован (временный, с token/expires)' : vp?.videoSources?.found ? 'Прямые ссылки без токенов' : 'Видео не найдено' });
-    // Poster
-    items.push({ key: 'poster', icon: vc?.found ? '✅' : '❌', label: 'Постеры доступны', status: vc?.found ? 'ok' : 'fail', hint: vc?.found ? `${vc.totalCardsFound} превью найдено` : 'Превью не найдены' });
-    // Direct video
-    const hasDirect = vp?.videoSources?.methods?.some(m => ['video_tag', 'meta_tag'].includes(m));
-    items.push({ key: 'directVideo', icon: hasDirect ? '✅' : vp?.videoSources?.found ? '⚠️' : '❌', label: 'Видео прямой ссылкой', status: hasDirect ? 'ok' : vp?.videoSources?.found ? 'warn' : 'fail', hint: hasDirect ? 'mp4/m3u8 в HTML-теге' : vp?.videoSources?.found ? 'Только через JS/regex' : 'Не найдено' });
-    // Cloudflare
-    if (prot.cloudflare) { items.push({ key: 'cf', icon: prot.cloudflareTurnstile ? '❌' : '⚠️', label: prot.cloudflareTurnstile ? 'Cloudflare Turnstile' : 'Cloudflare Basic', status: prot.cloudflareTurnstile ? 'fail' : 'warn', hint: prot.cloudflareTurnstile ? 'JS-challenge — нужен headless + stealth' : 'Обходится через Worker с правильными заголовками' }); }
-    else { items.push({ key: 'cf', icon: '✅', label: 'Cloudflare', status: 'ok', hint: 'Не обнаружен' }); }
-    // DDoS-Guard
-    if (prot.ddosGuard) items.push({ key: 'ddos', icon: '⚠️', label: 'DDoS-Guard', status: 'warn', hint: 'Может блокировать автоматические запросы' });
-    // DRM
-    items.push({ key: 'drm', icon: prot.drm ? '❌' : '✅', label: 'DRM-защита', status: prot.drm ? 'fail' : 'ok', hint: prot.drm ? `Обнаружено: ${prot.drmDetails.join(', ')}` : 'Не обнаружена' });
-    // Auth
-    items.push({ key: 'auth', icon: prot.authRequired ? '❌' : '✅', label: 'Авторизация', status: prot.authRequired ? 'fail' : 'ok', hint: prot.authRequired ? 'Обнаружена форма логина' : 'Не требуется' });
-    // Age gate
-    if (prot.ageGate?.detected) { const ag = prot.ageGate; items.push({ key: 'age', icon: ag.impact === 'none' ? '✅' : ag.impact === 'low' ? '⚠️' : '⚠️', label: `Age Gate (${ag.type})`, status: ag.impact === 'none' ? 'ok' : 'warn', hint: ag.note || '' }); }
-    else { items.push({ key: 'age', icon: '✅', label: 'Age Gate', status: 'ok', hint: 'Не обнаружен' }); }
-    // CAPTCHA
-    if (prot.recaptcha) items.push({ key: 'captcha', icon: '❌', label: 'CAPTCHA', status: 'fail', hint: 'reCAPTCHA/hCaptcha — нужен solver или headless' });
-
-    return items;
-}
-
-// ================================================================
-// НОВОЕ: VIDEO SOURCE PRIORITY
-// ================================================================
-function assignVideoPriority(sources) {
-    if (!sources) return [];
-    const priorityMap = {
-        '<video>': 3, 'og:meta': 2, 'JS': 1, 'javascript': 1,
-        'pattern': 1, 'Worker✦': 1, 'Base64': 1, 'iframe': 0,
-    };
-    return sources.map(s => {
-        let pri = 1;
-        for (const [k, v] of Object.entries(priorityMap)) {
-            if ((s.foundIn || '').includes(k)) { pri = v; break; }
-        }
-        if (s.tokenized) pri = Math.max(0, pri - 1);
-        if (s.base64) pri = Math.max(0, pri - 1);
-        return { ...s, priority: pri };
-    }).sort((a, b) => b.priority - a.priority);
-}
-
-// ================================================================
-// JS NAV, CARDS, VIDEO PAGE, SYNTH (без изменений в логике)
-// ================================================================
-function parseJsNavigation(doc,html,baseUrl){const allScript=Array.from(doc.querySelectorAll('script')).map(s=>s.textContent).join('\n');const combined=allScript+'\n'+html;const result={categories:{fromJs:[],fromHtml:[],merged:[]},sorting:{fromJs:[],fromHtml:[]},search:{patterns:[],paramNames:[],exampleUrls:[]},urlScheme:{}};const tw=getTestWord();const catPatterns=[/new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g,/new\s+\w+\s*\(\s*'([^']+)'\s*,\s*[^)]*[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g,/new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*"[&?]c=([A-Za-z0-9_-]+(?:-\d+)?)"/g];const jsCats=new Map();for(const pat of catPatterns){let m;while((m=pat.exec(combined))!==null){const name=m[1].trim(),slug=m[2];if(name&&slug&&name.length<80&&!jsCats.has(slug))jsCats.set(slug,{name,slug,url:baseUrl+'/?c='+slug})}pat.lastIndex=0}const cPP=/[?&]c=([A-Za-z0-9_-]+(?:-\d+)?)/g;let cm;while((cm=cPP.exec(combined))!==null){const slug=cm[1];if(!jsCats.has(slug)&&slug.length>1&&slug.length<60)jsCats.set(slug,{name:slug.replace(/[-_]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()),slug,url:baseUrl+'/?c='+slug})}result.categories.fromJs=[...jsCats.values()];const catSels=['.categories a','.category-list a','.cats a','.tags a','[class*="categor"] a','a[href*="/categories/"]','a[href*="/category/"]','a[href*="/c/"]','a[href*="/tags/"]','a[href*="?c="]'];for(const sel of catSels){try{const links=doc.querySelectorAll(sel);if(links.length>=3){links.forEach(a=>{const href=a.getAttribute('href'),name=a.textContent.trim();if(href&&name&&name.length<100){let slug='';const cM=href.match(/[?&]c=([^&]+)/),pM=href.match(/\/c\/([^/?]+)/);if(cM)slug=cM[1];else if(pM)slug=pM[1];else slug=href.split('/').filter(Boolean).pop()||'';result.categories.fromHtml.push({name,slug,url:resolve(href,baseUrl)})}});break}}catch{}}const mm=new Map();result.categories.fromJs.forEach(c=>mm.set(c.slug,c));result.categories.fromHtml.forEach(c=>{if(!mm.has(c.slug))mm.set(c.slug,c)});result.categories.merged=[...mm.values()];result.categories.totalCount=result.categories.merged.length;result.categories.source=result.categories.fromJs.length>result.categories.fromHtml.length?'JavaScript':'HTML';const sortPats=[/new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*[?&]sort=([a-z0-9_-]+)/gi,/new\s+\w+\s*\(\s*"([^"]+)"\s*,\s*[^)]*"[?&]sort=([a-z0-9_-]+)"/gi];const jsS=new Map();for(const pat of sortPats){let m;while((m=pat.exec(combined))!==null){const label=m[1].trim(),value=m[2];if(label&&value&&!jsS.has(value))jsS.set(value,{label,param:'sort='+value})}pat.lastIndex=0}const svP=/[?&]sort=([a-z0-9_-]+)/gi;while((cm=svP.exec(combined))!==null){const v=cm[1];if(!jsS.has(v))jsS.set(v,{label:v.replace(/[-_]/g,' '),param:'sort='+v})}result.sorting.fromJs=[...jsS.values()];for(const sel of['select[name*="sort"]','[class*="sort"] a','.sorting a','a[href*="sort="]']){try{doc.querySelectorAll(sel).forEach(el=>{if(el.tagName==='SELECT')el.querySelectorAll('option').forEach(o=>result.sorting.fromHtml.push({label:o.textContent.trim(),param:o.value?'sort='+o.value:null}));else if(el.tagName==='A'){const href=el.getAttribute('href')||'',sm=href.match(/sort=([^&]+)/);if(sm)result.sorting.fromHtml.push({label:el.textContent.trim(),param:'sort='+sm[1],url:resolve(href,baseUrl)})}})}catch{}}const sPP=[/[?&](search)=["']?\s*\.?concat/gi,/[?&](k)=["']?\s*\.?concat/gi,/[?&](q)=["']?\s*\.?concat/gi,/[?&](search)=[^&"']+/gi,/[?&](k)=[^&"']+/gi];const fSP=new Set();for(const pat of sPP){let m;while((m=pat.exec(combined))!==null)fSP.add(m[1].toLowerCase());pat.lastIndex=0}doc.querySelectorAll('form').forEach(f=>{f.querySelectorAll('input').forEach(i=>{const nm=(i.getAttribute('name')||'').toLowerCase();if(['q','k','query','search','s','keyword','find'].includes(nm))fSP.add(nm)})});result.search.paramNames=[...fSP];const sP=result.search.paramNames[0]||'q';const eTW=encodeURIComponent(tw);result.search.testWord=tw;const sB=baseUrl+'/?'+sP+'='+eTW;result.search.exampleUrls.push({label:'Поиск: '+tw,url:sB});result.sorting.fromJs.forEach(s=>{result.search.exampleUrls.push({label:'Поиск + '+s.label,url:baseUrl+'/?'+s.param+'&'+sP+'='+eTW})});result.urlScheme={base:baseUrl,search:{paramName:sP,pattern:baseUrl+'/?'+sP+'={query}',example:sB,withSort:result.search.exampleUrls},category:{paramName:'c',pattern:baseUrl+'/?c={slug}',example:result.categories.merged[0]?result.categories.merged[0].url:null,withSort:result.sorting.fromJs.length?baseUrl+'/?{sort_param}&c={slug}':null},sorting:{options:result.sorting.fromJs.length?result.sorting.fromJs:result.sorting.fromHtml,pattern:baseUrl+'/?sort={value}'},pagination:{pattern:'&page={N}',note:'Добавляется к любому URL'},combinations:{searchPlusSortPlusPagination:baseUrl+'/?sort={sort}&'+sP+'={query}&page={N}',categoryPlusSortPlusPagination:baseUrl+'/?sort={sort}&c={slug}&page={N}'}};return result}
-
-function extractSlug(href){if(!href)return null;try{const segs=new URL(href).pathname.split('/').filter(Boolean);for(let i=segs.length-1;i>=0;i--){const s=segs[i];if(/^[a-z0-9][-a-z0-9_]{5,}$/i.test(s)&&!/^\d+$/.test(s))return s.replace(/[-_]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()).trim()}}catch{}return null}
-function aCards(doc,base){const r={found:false,cardSelector:null,cardXPath:null,totalCardsFound:0,structure:{title:{css:null,xpath:null,fb:[],example:null},link:{css:null,xpath:null,fb:[],example:null,pattern:null},thumbnail:{css:null,xpath:null,fb:[],attribute:null,example:null},duration:{css:null,xpath:null,fb:[],example:null},quality:{css:null,xpath:null,fb:[],example:null},views:{css:null,xpath:null,fb:[],example:null},likes:{css:null,xpath:null,fb:[],example:null},date:{css:null,xpath:null,fb:[],example:null}},sampleCards:[]};const cS=['.video-item','.video-card','.thumb-item','.thumb','.video-thumb','.video_block','.video-block','.item','.video','.clip','.gallery-item','article','.post','.list-item','.grid-item','[data-video-id]','[data-id]','.card'];let cards=[],uS='';for(const s of cS)try{const f=doc.querySelectorAll(s);if(f.length>=2&&Array.from(f).some(e=>e.querySelector('a[href]'))&&Array.from(f).some(e=>e.querySelector('img'))){cards=Array.from(f);uS=s;break}}catch{}if(!cards.length){const p=[];doc.querySelectorAll('div,li,article').forEach(d=>{if(d.querySelectorAll(':scope>img,:scope>a>img,:scope>div>img').length>=1&&d.querySelectorAll(':scope>a[href]').length>=1&&d.querySelectorAll('a[href]').length<10)p.push(d)});if(p.length>=3){cards=p;uS='auto'}}if(!cards.length)return r;r.found=true;r.cardSelector=uS;r.totalCardsFound=cards.length;r.cardXPath=genXP(cards[0]);const tS=['h1','h2','h3','h4','h5','.title','.name','.video-title','a[title]','[class*="title"]','strong','b'];const dS=['.duration','.time','.video-time','[class*="duration"]','[class*="time"]','time'];const qS=['.quality','.hd','[class*="quality"]','[class*="hd"]'];const vS=['.views','.count','[class*="view"]','[class*="watch"]','.stats'];const lS=['.likes','.rating','[class*="like"]','[class*="rate"]','[class*="thumb"]'];const dtS=['.date','.added','[class*="date"]','[class*="added"]','[class*="ago"]','time[datetime]'];const imgA=['data-src','data-original','data-lazy-src','data-thumb','src'];for(let i=0;i<Math.min(8,cards.length);i++){const card=cards[i],cd={};const tF=[];for(const ts of tS)try{const el=card.querySelector(ts);if(el){const t=ts==='a[title]'?(el.getAttribute('title')||''):el.textContent.trim();if(t.length>2&&t.length<300){tF.push({css:`${uS} ${ts}`,xpath:sXP(el),example:t.substring(0,80)});if(!cd.title)cd.title=t}}}catch{}const imgAlt=card.querySelector('img[alt]');if(imgAlt){const alt=imgAlt.getAttribute('alt')||'';if(alt.length>3&&alt.length<200){tF.push({css:`${uS} img[alt]`,xpath:sXP(imgAlt),example:alt.substring(0,80),source:'img-alt'});if(!cd.title)cd.title=alt}}if(i===0&&tF.length){r.structure.title.css=tF[0].css;r.structure.title.xpath=tF[0].xpath;r.structure.title.example=tF[0].example;r.structure.title.fb=tF.slice(1)}const lk=card.querySelector('a[href]');if(lk){cd.link=resolve(lk.getAttribute('href'),base);if(i===0){r.structure.link.css=`${uS} a[href]`;r.structure.link.xpath=sXP(lk);r.structure.link.example=cd.link;try{r.structure.link.pattern=new URL(cd.link).pathname.replace(/\/\d+\//g,'/{id}/').replace(/\/\d+$/,'/{id}').replace(/\/[a-z0-9_-]{10,}\/?$/i,'/{slug}/')}catch{}}const slug=extractSlug(cd.link);if(slug){cd.slugName=slug;if(!cd.title)cd.title=slug}}const thF=[];card.querySelectorAll('img').forEach(img=>{for(const at of imgA){const sv=img.getAttribute(at);if(sv&&!sv.startsWith('data:')&&sv.length>5){thF.push({css:`${uS} img`,xpath:sXP(img),attr:at,example:resolve(sv,base)});if(!cd.thumbnail)cd.thumbnail=resolve(sv,base);break}}});if(i===0&&thF.length){r.structure.thumbnail.css=thF[0].css;r.structure.thumbnail.xpath=thF[0].xpath;r.structure.thumbnail.attribute=thF[0].attr;r.structure.thumbnail.example=thF[0].example;r.structure.thumbnail.fb=thF.slice(1)}const dF=[];for(const ds of dS)try{const el=card.querySelector(ds);if(el){let t=el.textContent.trim();if(el.tagName==='TIME'&&el.getAttribute('datetime')){const pt=el.getAttribute('datetime').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);if(pt)t=[pt[1]||'',pt[2]||'0',(pt[3]||'0').padStart(2,'0')].filter(Boolean).join(':')}if(/\d{1,2}:\d{2}/.test(t)){dF.push({css:`${uS} ${ds}`,xpath:sXP(el),example:t});if(!cd.duration)cd.duration=t}}}catch{}if(!cd.duration)for(const el of card.querySelectorAll('span,div,small,em')){const t=el.textContent.trim();if(/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)){cd.duration=t;dF.push({css:`${uS} ${el.tagName.toLowerCase()}`,xpath:sXP(el),example:t});break}}if(i===0&&dF.length){r.structure.duration.css=dF[0].css;r.structure.duration.xpath=dF[0].xpath;r.structure.duration.example=dF[0].example;r.structure.duration.fb=dF.slice(1)}const qF=[];for(const qs of qS)try{const el=card.querySelector(qs);if(el){const t=el.textContent.trim();if(/\b(HD|FHD|4K|1080|720|SD)\b/i.test(t)){qF.push({css:`${uS} ${qs}`,xpath:sXP(el),example:t});if(!cd.quality)cd.quality=t}}}catch{}if(i===0&&qF.length){r.structure.quality.css=qF[0].css;r.structure.quality.xpath=qF[0].xpath;r.structure.quality.example=qF[0].example;r.structure.quality.fb=qF.slice(1)}const vF=[];for(const vs of vS)try{const el=card.querySelector(vs);if(el){const t=el.textContent.trim();const nm=t.match(/([\d,.]+\s*[KkMm]?)\s*(views?|просмотр|раз|hits?)?/i);if(nm){vF.push({css:`${uS} ${vs}`,xpath:sXP(el),example:nm[0].trim()});if(!cd.views)cd.views=nm[0].trim()}}}catch{}if(!cd.views){const dv=card.querySelector('[data-views]');if(dv){cd.views=dv.getAttribute('data-views');vF.push({css:`${uS} [data-views]`,xpath:sXP(dv),example:cd.views})}}if(i===0&&vF.length){r.structure.views.css=vF[0].css;r.structure.views.xpath=vF[0].xpath;r.structure.views.example=vF[0].example;r.structure.views.fb=vF.slice(1)}const lF=[];for(const ls of lS)try{const el=card.querySelector(ls);if(el){const t=el.textContent.trim();if(/[\d,.%]+/.test(t)&&t.length<30){lF.push({css:`${uS} ${ls}`,xpath:sXP(el),example:t});if(!cd.likes)cd.likes=t}}}catch{}if(!cd.likes)for(const attr of['data-likes','data-rating','data-score']){const el=card.querySelector(`[${attr}]`);if(el){cd.likes=el.getAttribute(attr);lF.push({css:`${uS} [${attr}]`,xpath:sXP(el),example:cd.likes});break}}if(i===0&&lF.length){r.structure.likes.css=lF[0].css;r.structure.likes.xpath=lF[0].xpath;r.structure.likes.example=lF[0].example;r.structure.likes.fb=lF.slice(1)}const dtF=[];for(const ds of dtS)try{const el=card.querySelector(ds);if(el){let t=el.textContent.trim();if(el.tagName==='TIME'&&el.getAttribute('datetime')&&!/PT\d/.test(el.getAttribute('datetime')))t=el.getAttribute('datetime');if(t.length>2&&t.length<50&&/\d/.test(t)){dtF.push({css:`${uS} ${ds}`,xpath:sXP(el),example:t});if(!cd.date)cd.date=t}}}catch{}if(!cd.date)for(const el of card.querySelectorAll('span,div,small,em,time')){const t=el.textContent.trim();if(/^\d+\s*(дн|час|мин|ago|day|hour|min|week|month|назад)/i.test(t)||/^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}$/.test(t)){cd.date=t;dtF.push({css:`${uS} ${el.tagName.toLowerCase()}`,xpath:sXP(el),example:t});break}}if(i===0&&dtF.length){r.structure.date.css=dtF[0].css;r.structure.date.xpath=dtF[0].xpath;r.structure.date.example=dtF[0].example;r.structure.date.fb=dtF.slice(1)}r.sampleCards.push(cd)}return r}
-
-async function aVP(url,base){const r={analyzed:false,videoUrl:url,urlStructure:{pattern:null},videoSources:{found:false,sources:[],methods:[]},relatedVideos:{found:false}};if(!url)return r;try{setStatus('📥 Видео...','loading');setProgress(82,'Видео...');const html=await fetchPage(url);const doc=parseH(html);r.analyzed=true;try{r.urlStructure.pattern=new URL(url).pathname.replace(/\/\d+\//g,'/{id}/').replace(/\/\d+$/,'/{id}').replace(/\/[a-z0-9_-]{10,}\/?$/i,'/{slug}/')}catch{}r.pageTitle=doc.title;const h1=doc.querySelector('h1');if(h1)r.videoTitle=h1.textContent.trim();doc.querySelectorAll('video, video source').forEach(v=>{const s=v.getAttribute('src')||v.getAttribute('data-src');if(s){r.videoSources.sources.push({type:s.includes('.m3u8')?'HLS':s.includes('.mp4')?'MP4':'?',url:resolve(s,base),foundIn:'<video>',attr:v.hasAttribute('data-src')?'data-src':'src'});r.videoSources.found=true;r.videoSources.methods.push('video_tag')}});const asc=Array.from(doc.querySelectorAll('script')).map(s=>s.textContent).join('\n');for(const p of[/["'](?:file|src|source|video_url|mp4|hls)["']\s*[:=]\s*["'](https?:\/\/[^"']+\.(?:mp4|m3u8|webm)[^"']*?)["']/gi,/(?:https?:\/\/[^\s"'<>]+\.(?:mp4|m3u8|webm)(?:\?[^\s"'<>]*)?)/gi]){let m;while((m=p.exec(asc))){const u=(m[1]||m[0]).replace(/\\/g,'');if(/\.(mp4|m3u8|webm)/.test(u)){const tok=/(?:token|expires|hash|sign)=/i.test(u);r.videoSources.sources.push({type:u.includes('.m3u8')?'HLS':u.includes('.mp4')?'MP4':'WebM',url:u,foundIn:'JS',tokenized:tok});r.videoSources.found=true;r.videoSources.methods.push('javascript')}}p.lastIndex=0}doc.querySelectorAll('meta[property="og:video"],meta[property="og:video:url"]').forEach(m=>{const u=m.getAttribute('content');if(u){r.videoSources.sources.push({type:u.includes('.m3u8')?'HLS':'MP4',url:resolve(u,base),foundIn:'og:meta'});r.videoSources.found=true;r.videoSources.methods.push('meta_tag')}});const ifs=[];doc.querySelectorAll('iframe[src],iframe[data-src]').forEach(f=>{const s=f.getAttribute('src')||f.getAttribute('data-src');if(s&&(s.includes('player')||s.includes('embed')||s.includes('video')))ifs.push({src:resolve(s,base)})});if(ifs.length){r.videoSources.playerIframes=ifs;r.videoSources.methods.push('iframe')}const we=await extractVW(url);if(we){r.videoSources.sources.push({type:we.includes('.m3u8')?'HLS':'MP4',url:we,foundIn:'Worker✦'});r.videoSources.found=true;r.videoSources.methods.push('worker_extract')}const ob=aObf(html);if(ob.base64Urls.length){ob.base64Urls.forEach(b=>{r.videoSources.sources.push({type:b.type,url:b.dec,foundIn:'Base64',base64:true})});r.videoSources.found=true;r.videoSources.methods.push('base64')}if(!r.videoSources.found)for(const p of[/["'](https?:\/\/[^"']+\.mp4[^"']*)['"]/i,/["'](https?:\/\/[^"']+\.m3u8[^"']*)['"]/i]){const m=html.match(p);if(m?.[1]){r.videoSources.sources.push({type:m[1].includes('.m3u8')?'HLS':'MP4',url:m[1],foundIn:'pattern'});r.videoSources.found=true;r.videoSources.methods.push('pattern');break}}const ss=new Set();r.videoSources.sources=r.videoSources.sources.filter(s=>{if(ss.has(s.url))return false;ss.add(s.url);return true});r.videoSources.methods=uniq(r.videoSources.methods);
-    // НОВОЕ: assign priority
-    r.videoSources.sources = assignVideoPriority(r.videoSources.sources);
-    r.obfuscation=ob;for(const sel of['.related','.related-videos','.similar','#related','[class*="related"]'])try{const el=doc.querySelector(sel);if(el){const rl=el.querySelectorAll('a[href]');if(rl.length){r.relatedVideos={found:true,selector:sel,count:rl.length};break}}}catch{}}catch(e){r.error=isCE(e)?'🛡️ CORS':e.message}return r}
-
-function synth(dom,fw,api,prot,obf,jsd,vc,vp){let st='A',lb='Статический HTML',ds='Все данные в HTML';const empty=dom.totalElements<100,spa=fw.some(f=>['React','Vue.js','Angular','Next.js','Nuxt.js'].includes(f));const hAPI=api.endpoints.length>0||api.stateVars.length>0;const hls=vp?.videoSources?.sources?.some(s=>(s.type||'').includes('HLS'));const ifr=vp?.videoSources?.playerIframes?.length>0;if(empty&&spa){st='C';lb='Dynamic JS';ds='Headless'}else if(!empty&&hAPI&&!vc?.found){st='B';lb='JSON API';ds='API sniffing'}else if(hls&&!vc?.found){st='D';lb='Стриминг';ds='Stream extractor'}else if(vc?.found&&(ifr||spa||hAPI)){st='E';lb='Гибрид';ds='HTML+JS'}let cx=1;const cf=[];if(vc?.found){cx-=.5;cf.push({t:'Cards HTML',e:-.5})}else{cx+=1.5;cf.push({t:'No cards',e:1.5})}if(vp?.videoSources?.found){const mt=vp.videoSources.methods||[];if(mt.includes('video_tag')){cf.push({t:'<video>',e:-.3});cx-=.3}else if(mt.includes('javascript')){cf.push({t:'JS',e:.3});cx+=.3}else if(mt.includes('base64')){cf.push({t:'Base64',e:.8});cx+=.8}}else{cx+=1;cf.push({t:'No video',e:1})}if(ifr){cx+=.5;cf.push({t:'iframe',e:.5})}if(empty){cx+=1.5;cf.push({t:'Empty DOM',e:1.5})}if(spa){cx+=.5;cf.push({t:'SPA',e:.5})}if(prot.cloudflare){cx+=prot.cloudflareTurnstile?1.5:1;cf.push({t:prot.cloudflareTurnstile?'CF Turnstile':'CF Basic',e:prot.cloudflareTurnstile?1.5:1})}if(prot.ddosGuard){cx+=.8;cf.push({t:'DDoS',e:.8})}if(prot.recaptcha){cx+=1;cf.push({t:'CAPTCHA',e:1})}if(prot.drm){cx+=1.5;cf.push({t:'DRM: '+prot.drmDetails.join(','),e:1.5})}if(obf?.base64Urls?.length){cx+=.5;cf.push({t:'Base64 obf',e:.5})}const lvl=Math.max(1,Math.min(5,Math.round(cx)));const ll={1:'Элементарно',2:'Просто',3:'Средне',4:'Сложно',5:'Очень сложно'};let rm='CSS + XPath',rt='Cheerio/BS4',rtr='Прокси',rn=[];if(st==='B'){rm='API sniffing';rt='requests+JSON'}else if(st==='C'){rm='Headless';rt='Puppeteer';rtr='Headless Chrome'}else if(st==='E'){rm='CSS + JS regex';rt='Cheerio + regex'}if(prot.cloudflare||prot.ddosGuard){rtr='Worker/stealth';rn.push('Anti-DDoS')}if(jsd.jsRequired==='yes')rn.push('Requires JS');if(prot.drm)rn.push('DRM — прямое скачивание невозможно');return{siteType:st,siteTypeLabel:lb,siteTypeDesc:ds,complexity:lvl,complexityLabel:ll[lvl],complexityFactors:cf,recommendation:{method:rm,tools:rt,transport:rtr,notes:rn},frameworks:fw,apiEndpoints:api.endpoints,stateVars:api.stateVars,protection:prot,domInfo:dom,jsDependency:jsd,obfuscation:obf,headersUsed:{'User-Agent':getUA()}}}
-
-// ================================================================
-// DIRECT TEST — проверка сайта без прокси
-// ================================================================
-async function runDirectTest() {
-    const ui = $('targetUrl'), targetUrl = (ui?.value.trim() || '') || DEFAULT_TARGET_URL;
-    if (!targetUrl) { setStatus('❌ URL!', 'error'); return; }
-    try { new URL(targetUrl); } catch { setStatus('❌ Bad URL', 'error'); return; }
-    if (ui) ui.value = targetUrl;
-    const base = baseOf(targetUrl);
-    const btn = $('btnAnalyze'); if (btn) { btn.disabled = true; btn.textContent = '🧪 Тестирую...'; }
-    $('results').style.display = 'none'; updCI('hidden'); transportLog = [];
-    const pb = $('progress-bar'); if (pb) pb.classList.remove('cors-error', 'warning', 'worker');
-
-    const results = {
-        url: targetUrl,
-        testedAt: new Date().toISOString(),
-        checks: [],
-        verdict: 'unknown'
-    };
-
-    setStatus('🧪 Тест без прокси...', 'loading');
-    setProgress(10, '🔗 Прямой запрос...');
-
-    // 1. Прямой запрос к каталогу
-    let catalogHtml = null, catalogOk = false, catalogError = null;
     try {
-        const ac = new AbortController();
-        const timeout = setTimeout(() => ac.abort(), 12000);
-        const resp = await fetch(targetUrl, {
-            headers: { Accept: 'text/html,*/*' },
-            signal: ac.signal
-        });
-        clearTimeout(timeout);
-        if (resp.ok) {
-            catalogHtml = await resp.text();
-            if (catalogHtml.length > 100) {
-                catalogOk = true;
-                results.checks.push({ key: 'directFetch', icon: '✅', label: 'Прямой запрос к каталогу', status: 'ok', hint: `HTTP ${resp.status}, ${(catalogHtml.length / 1024).toFixed(0)} KB` });
-            } else {
-                results.checks.push({ key: 'directFetch', icon: '⚠️', label: 'Прямой запрос', status: 'warn', hint: `Ответ слишком мал: ${catalogHtml.length} байт` });
-            }
-        } else {
-            results.checks.push({ key: 'directFetch', icon: '❌', label: 'Прямой запрос', status: 'fail', hint: `HTTP ${resp.status}` });
-        }
+        const html = await fetchPage(url);
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        
+        updateProgress(30, 'Анализ структуры и защиты...');
+        const analysis = {
+            protection: analyzeProtection(doc, html),
+            videoSources: await analyzeVideoSources(doc, html),
+            engine: detectEngine(doc, html),
+            dom: analyzeDOM(doc)
+        };
+
+        state.results = analysis;
+        renderResults(analysis);
+        updateProgress(100, 'Готово!');
     } catch (e) {
-        catalogError = e;
-        const isCors = isCE(e);
-        results.checks.push({ key: 'directFetch', icon: '❌', label: 'Прямой запрос к каталогу', status: 'fail', hint: isCors ? 'CORS заблокирован — прямой доступ из браузера невозможен' : e.message });
+        document.getElementById('status').innerHTML = `<span class="error">Ошибка: ${e.message}</span>`;
+        updateProgress(100, 'Ошибка', 'error');
     }
-
-    setProgress(30, 'Анализ HTML...');
-
-    // 2. Если HTML получен — проверить SSR
-    if (catalogHtml) {
-        const doc = parseH(catalogHtml);
-        const domCount = doc.querySelectorAll('*').length;
-
-        // SSR check
-        const hasMeaningfulDom = domCount > 100;
-        const spaRoot = doc.querySelector('#app, #root, #__next, #__nuxt, [data-reactroot]');
-        const isSPA = spaRoot && spaRoot.children.length <= 3;
-        results.checks.push({
-            key: 'ssr', icon: hasMeaningfulDom && !isSPA ? '✅' : '❌',
-            label: 'HTML содержит контент (SSR)',
-            status: hasMeaningfulDom && !isSPA ? 'ok' : 'fail',
-            hint: isSPA ? `SPA-root найден, DOM ${domCount} — нужен JS` : `DOM ${domCount} элементов`
-        });
-
-        // Cards check
-        const cSels = ['.video-item', '.video-card', '.thumb-item', '.thumb', '.video-thumb', '.video_block', '.item', '.video', 'article', '.card', '[data-video-id]'];
-        let cardsFound = 0, cardSel = '';
-        for (const s of cSels) {
-            try {
-                const f = doc.querySelectorAll(s);
-                if (f.length >= 2) { cardsFound = f.length; cardSel = s; break; }
-            } catch {}
-        }
-        results.checks.push({
-            key: 'cards', icon: cardsFound > 0 ? '✅' : '❌',
-            label: 'Карточки в HTML',
-            status: cardsFound > 0 ? 'ok' : 'fail',
-            hint: cardsFound > 0 ? `${cardsFound} карточек (${cardSel})` : 'Не найдены — возможно грузятся через JS'
-        });
-
-        // Thumbnails check
-        const imgs = doc.querySelectorAll('img[src], img[data-src]');
-        const thumbCount = Array.from(imgs).filter(i => {
-            const s = i.getAttribute('src') || i.getAttribute('data-src') || '';
-            return s && !s.startsWith('data:') && s.length > 10;
-        }).length;
-        results.checks.push({
-            key: 'thumbs', icon: thumbCount > 3 ? '✅' : '⚠️',
-            label: 'Постеры/превью доступны',
-            status: thumbCount > 3 ? 'ok' : 'warn',
-            hint: `${thumbCount} картинок найдено`
-        });
-
-        // Cloudflare/Protection
-        const lc = catalogHtml.toLowerCase();
-        const hasCF = lc.includes('challenges.cloudflare.com') || lc.includes('cf-browser-verification');
-        const hasTurnstile = lc.includes('turnstile') || lc.includes('cf-turnstile');
-        const hasDDoS = lc.includes('ddos-guard');
-        const hasCaptcha = lc.includes('recaptcha') || lc.includes('hcaptcha');
-        if (hasCF) {
-            results.checks.push({ key: 'cf', icon: hasTurnstile ? '❌' : '⚠️', label: hasTurnstile ? 'Cloudflare Turnstile' : 'Cloudflare Basic', status: hasTurnstile ? 'fail' : 'warn', hint: hasTurnstile ? 'JS-challenge — прямой парсинг невозможен' : 'Возможен обход через заголовки' });
-        } else {
-            results.checks.push({ key: 'cf', icon: '✅', label: 'Cloudflare', status: 'ok', hint: 'Не обнаружен' });
-        }
-        if (hasDDoS) results.checks.push({ key: 'ddos', icon: '⚠️', label: 'DDoS-Guard', status: 'warn', hint: 'Может блокировать автоматические запросы' });
-        if (hasCaptcha) results.checks.push({ key: 'captcha', icon: '❌', label: 'CAPTCHA', status: 'fail', hint: 'Обнаружена — нужен solver' });
-
-        // Age gate
-        const ageText = /(?:мне\s*(?:уже\s*)?18|i\s*am\s*(?:over\s*)?18|18\+|старше\s*18|confirm.*age)/i.test(doc.body?.textContent || '');
-        const ageSel = doc.querySelector('#age-verify, #age-gate, .age-verify, .age-gate, [class*="age-verif"]');
-        if (ageText || ageSel) {
-            results.checks.push({ key: 'age', icon: '⚠️', label: 'Age Gate обнаружен', status: 'warn', hint: 'Может потребоваться cookie или POST-подтверждение' });
-        }
-
-        // DRM
-        const allScript = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n').toLowerCase();
-        const hasDRM = ['widevine', 'playready', 'fairplay', 'clearkey', 'encrypted-media', 'requestmedialkeysystemaccess'].some(d => allScript.includes(d) || lc.includes(d));
-        results.checks.push({ key: 'drm', icon: hasDRM ? '❌' : '✅', label: 'DRM-защита', status: hasDRM ? 'fail' : 'ok', hint: hasDRM ? 'Обнаружена — прямое скачивание невозможно' : 'Не обнаружена' });
-    }
-
-    setProgress(60, 'Тест видео-страницы...');
-
-    // 3. Проверить видео-страницу (если есть карточки — найти ссылку)
-    let videoPageOk = false;
-    if (catalogHtml) {
-        const doc = parseH(catalogHtml);
-        let videoUrl = null;
-        const links = doc.querySelectorAll('a[href]');
-        for (const a of links) {
-            const href = a.getAttribute('href') || '';
-            if (href.includes('video') || href.includes('watch') || href.includes('view') || /\/\d{3,}\//.test(href)) {
-                videoUrl = resolve(href, base);
-                break;
-            }
-        }
-        if (videoUrl) {
-            try {
-                const ac2 = new AbortController();
-                const t2 = setTimeout(() => ac2.abort(), 12000);
-                const resp2 = await fetch(videoUrl, { headers: { Accept: 'text/html,*/*' }, signal: ac2.signal });
-                clearTimeout(t2);
-                if (resp2.ok) {
-                    const vHtml = await resp2.text();
-                    videoPageOk = vHtml.length > 200;
-                    const vDoc = parseH(vHtml);
-
-                    // Video URL in HTML
-                    const videoTag = vDoc.querySelector('video[src], video source[src]');
-                    const ogVideo = vDoc.querySelector('meta[property="og:video"]');
-                    const allScript = Array.from(vDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
-                    const jsVideoMatch = allScript.match(/https?:\/\/[^\s"']+\.(?:mp4|m3u8)/i);
-
-                    if (videoTag) {
-                        const src = videoTag.getAttribute('src') || '';
-                        results.checks.push({ key: 'videoTag', icon: '✅', label: 'Видео в <video> теге', status: 'ok', hint: `<source>/<video> src найден` });
-                    } else if (ogVideo) {
-                        results.checks.push({ key: 'videoOg', icon: '✅', label: 'Видео в og:video', status: 'ok', hint: ogVideo.getAttribute('content')?.substring(0, 60) });
-                    } else if (jsVideoMatch) {
-                        results.checks.push({ key: 'videoJs', icon: '⚠️', label: 'Видео только в JS-коде', status: 'warn', hint: 'Нужен regex-парсинг JS' });
-                    } else {
-                        results.checks.push({ key: 'videoNone', icon: '❌', label: 'Видео-URL не найден в HTML', status: 'fail', hint: 'Возможно требуется JS-рендер или API' });
-                    }
-
-                    // Token check
-                    const anyVideoUrl = videoTag?.getAttribute('src') || ogVideo?.getAttribute('content') || jsVideoMatch?.[0] || '';
-                    if (anyVideoUrl && /(?:token|expires|hash|sign)=/i.test(anyVideoUrl)) {
-                        results.checks.push({ key: 'token', icon: '⚠️', label: 'Видео-URL токенизирован', status: 'warn', hint: 'URL временный — содержит token/expires' });
-                    } else if (anyVideoUrl) {
-                        results.checks.push({ key: 'token', icon: '✅', label: 'Видео-URL стабилен', status: 'ok', hint: 'Без токенов' });
-                    }
-
-                    results.checks.push({ key: 'videoPage', icon: '✅', label: 'Видео-страница доступна', status: 'ok', hint: `${(vHtml.length / 1024).toFixed(0)} KB` });
-                } else {
-                    results.checks.push({ key: 'videoPage', icon: '❌', label: 'Видео-страница', status: 'fail', hint: `HTTP ${resp2.status}` });
-                }
-            } catch (e) {
-                results.checks.push({ key: 'videoPage', icon: '❌', label: 'Видео-страница', status: 'fail', hint: isCE(e) ? 'CORS заблокирован' : e.message });
-            }
-        }
-    }
-
-    setProgress(90, 'Вердикт...');
-
-    // 4. Verdict
-    const okCount = results.checks.filter(c => c.status === 'ok').length;
-    const failCount = results.checks.filter(c => c.status === 'fail').length;
-    const warnCount = results.checks.filter(c => c.status === 'warn').length;
-    const total = results.checks.length;
-
-    if (failCount === 0 && warnCount <= 1) {
-        results.verdict = 'ok';
-        results.verdictLabel = '✅ Совместим — парсинг без прокси возможен';
-        results.verdictHints = ['Прямой fetch работает', 'HTML содержит данные', 'Защита не мешает'];
-    } else if (failCount <= 2 && okCount >= total / 2) {
-        results.verdict = 'partial';
-        results.verdictLabel = '⚠️ Частично — работает с ограничениями';
-        results.verdictHints = [];
-        if (results.checks.find(c => c.key === 'directFetch' && c.status === 'fail')) results.verdictHints.push('CORS — нужен прокси/Worker для запросов');
-        if (results.checks.find(c => c.key === 'ssr' && c.status === 'fail')) results.verdictHints.push('SPA — нужен headless browser');
-        if (results.checks.find(c => c.key === 'videoNone' || c.key === 'videoJs')) results.verdictHints.push('Видео через JS — regex или headless');
-        if (warnCount > 0) results.verdictHints.push(`${warnCount} предупреждений — см. детали`);
-    } else {
-        results.verdict = 'fail';
-        results.verdictLabel = '❌ Несовместим — прямой парсинг невозможен';
-        results.verdictHints = [];
-        if (results.checks.find(c => c.key === 'directFetch' && c.status === 'fail')) results.verdictHints.push('Сайт блокирует прямые запросы (CORS/WAF)');
-        if (results.checks.find(c => c.key === 'cf' && c.status === 'fail')) results.verdictHints.push('Cloudflare Turnstile — нужен headless + stealth');
-        if (results.checks.find(c => c.key === 'drm' && c.status === 'fail')) results.verdictHints.push('DRM — прямое скачивание невозможно');
-        if (results.checks.find(c => c.key === 'captcha' && c.status === 'fail')) results.verdictHints.push('CAPTCHA — нужен solver');
-    }
-
-    setProgress(100, '✅');
-
-    // 5. Render
-    analysisResult = { _meta: { analyzedUrl: targetUrl, analyzedAt: results.testedAt, mode: 'direct-test', tool: 'v3.4' }, directTest: results, _transportLog: transportLog };
-
-    let h = '';
-    const isFail = results.verdict === 'fail';
-    h += `<div class="direct-test-block${isFail ? ' fail' : ''}">`;
-    h += `<h3${isFail ? ' class="fail-title"' : ''}>🧪 Тест без прокси: ${esc(targetUrl)}</h3>`;
-    h += '<div class="dt-grid">';
-    results.checks.forEach(c => {
-        h += `<div class="dt-item"><span class="dt-icon">${c.icon}</span><div class="dt-text"><strong>${esc(c.label)}</strong><span class="dt-hint">${esc(c.hint)}</span></div></div>`;
-    });
-    h += '</div>';
-    h += `<div class="dt-summary"><div class="verdict ${results.verdict}">${esc(results.verdictLabel)}</div>`;
-    if (results.verdictHints.length) { h += '<ul>'; results.verdictHints.forEach(v => { h += `<li>${esc(v)}</li>`; }); h += '</ul>'; }
-    h += '</div></div>';
-
-    $('results').style.display = 'block';
-    $('archReport').innerHTML = h;
-    $('jsonFormatted').innerHTML = synHL(JSON.stringify(analysisResult, null, 2));
-    $('jsonRaw').value = JSON.stringify(analysisResult, null, 2);
-    $('visualReport').innerHTML = h;
-    $('btnCopyJson').disabled = false;
-    $('btnCopyArch').disabled = false;
-    showTab('arch');
-    setStatus('🧪 Тест завершён!', 'success');
-    if (btn) { btn.disabled = false; btn.textContent = '🚀 Полный анализ'; }
 }
 
-// ================================================================
-// MAIN
-// ================================================================
-async function runFullAnalysis(){const proxyMode=($('proxySelect')||{}).value;if(proxyMode==='direct-test'){return runDirectTest()}const ui=$('targetUrl'),targetUrl=(ui?.value.trim()||'')||DEFAULT_TARGET_URL;if(!targetUrl){setStatus('❌ URL!','error');return}try{new URL(targetUrl)}catch{setStatus('❌ Bad URL','error');return}if(ui)ui.value=targetUrl;const base=baseOf(targetUrl),w=getW();const btn=$('btnAnalyze');if(btn){btn.disabled=true;btn.textContent='⏳'}$('results').style.display='none';updCI('hidden');updW(!!w);transportLog=[];const pb=$('progress-bar');if(pb)pb.classList.remove('cors-error','warning','worker');analysisResult={_meta:{analyzedUrl:targetUrl,baseUrl:base,analyzedAt:new Date().toISOString(),workerUsed:w||'нет',userAgent:getUA(),testWord:getTestWord(),tool:'v3.4'}};try{setStatus('📥','loading');setProgress(10,'📡');let html;try{html=await fetchPage(targetUrl)}catch(e){setProgress(10,'❌','cors-error');setStatus('❌ '+e.message,'error');analysisResult._error={type:isCE(e)?'CORS':'FETCH',message:e.message};analysisResult._transportLog=transportLog;displayResults(analysisResult);return}const doc=parseH(html);setProgress(20,(html.length/1024).toFixed(0)+'KB');setProgress(22,'DOM');const dom=aDom(doc);setProgress(25,'Enc');analysisResult.encoding=aEnc(doc);setProgress(27,'Meta');analysisResult.meta=aMeta(doc);setProgress(30,'FW');const fw=aFW(doc,html);setProgress(34,'API');const api=aAPI(doc);setProgress(38,'Prot');const prot=aProt(doc,html);setProgress(40,'Obf');const obf=aObf(html);setProgress(44,'Pag');analysisResult.pagination=aPag(doc,base,targetUrl);setProgress(48,'QP');analysisResult.queryParams=aQP(doc,base);setProgress(55,'Cards');analysisResult.videoCards=aCards(doc,base);setProgress(62,'JS dep');const jsd=aJSD(doc,html,analysisResult.videoCards.found,fw);setProgress(66,'Compat');analysisResult.compatibility=assessCompatibility(jsd,prot,analysisResult.videoCards,null,obf);setProgress(70,'JS Nav');analysisResult.navigation=parseJsNavigation(doc,html,base);setProgress(78,'Video');const svUrl=analysisResult.videoCards.sampleCards?.[0]?.link;analysisResult.videoPage=svUrl?await aVP(svUrl,base):{analyzed:false};
-    // Update compat with video page data
-    analysisResult.compatibility=assessCompatibility(jsd,prot,analysisResult.videoCards,analysisResult.videoPage,obf);
-    setProgress(88,'Synth');analysisResult.architecture=synth(dom,fw,api,prot,obf,jsd,analysisResult.videoCards,analysisResult.videoPage);setProgress(94,'Report');analysisResult._summary={siteType:analysisResult.architecture.siteType,siteTypeLabel:analysisResult.architecture.siteTypeLabel,complexity:analysisResult.architecture.complexity,complexityLabel:analysisResult.architecture.complexityLabel,jsRequired:jsd.jsRequired,encoding:analysisResult.encoding.charset,hasPagination:analysisResult.pagination.pagination.found,paginationPattern:analysisResult.pagination.pagination.pattern,videoCardsFound:analysisResult.videoCards.totalCardsFound,fieldsFound:Object.entries(analysisResult.videoCards.structure).filter(([_,v])=>v.css).map(([k])=>k),videoSourceFound:analysisResult.videoPage.videoSources?.found||false,videoSourceMethods:analysisResult.videoPage.videoSources?.methods||[],categoriesCount:analysisResult.navigation.categories.totalCount,categoriesSource:analysisResult.navigation.categories.source,sortingOptions:analysisResult.navigation.sorting.fromJs.length||analysisResult.navigation.sorting.fromHtml.length,searchParamNames:analysisResult.navigation.search.paramNames,testWord:getTestWord(),frameworks:fw,protection:{cloudflare:prot.cloudflare,cloudflareTurnstile:prot.cloudflareTurnstile,ddosGuard:prot.ddosGuard,recaptcha:prot.recaptcha,drm:prot.drm,drmDetails:prot.drmDetails,ageGate:prot.ageGate?.detected?prot.ageGate:null,authRequired:prot.authRequired}};analysisResult._transportLog=transportLog;displayResults(analysisResult);setProgress(100,'✅');setStatus('✅ Готово!','success')}catch(e){setStatus('❌ '+e.message,'error');analysisResult._transportLog=transportLog;displayResults(analysisResult)}finally{if(btn){btn.disabled=false;btn.textContent='🚀 Полный анализ'}}}
+// --- FETCH & CORS ---
+async function fetchPage(url) {
+    // В v4.0.0 по умолчанию пробуем воркер для глубокого анализа, если он указан
+    const worker = document.getElementById('workerUrl').value;
+    const fetchUrl = worker ? `${worker}/?url=${encodeURIComponent(url)}` : url;
+    
+    const resp = await fetch(fetchUrl);
+    if (!resp.ok) throw new Error('Сайт недоступен (CORS или 404)');
+    return await resp.text();
+}
 
-// ================================================================
-// DISPLAY
-// ================================================================
-function displayResults(d){$('results').style.display='block';const j=JSON.stringify(d,null,2);$('jsonFormatted').innerHTML=synHL(j);$('jsonRaw').value=j;$('visualReport').innerHTML=genVis(d);$('archReport').innerHTML=genArch(d);$('btnCopyJson').disabled=false;$('btnCopyArch').disabled=false}
+// --- SMART EXTRACTOR ---
+async function analyzeVideoSources(doc, html) {
+    const sources = [];
+    
+    // 1. Поиск <source>
+    doc.querySelectorAll('video source, source').forEach(el => {
+        const src = el.getAttribute('src');
+        if (src && src.includes('.mp4')) {
+            sources.push({
+                url: resolveUrl(src),
+                type: 'html5_tag',
+                quality: el.getAttribute('size') || el.getAttribute('data-res') || 'auto'
+            });
+        }
+    });
 
-// ================================================================
-// ARCHITECTURE TAB
-// ================================================================
-function genArch(d){if(!d.architecture)return d._error?genCors(d):'<p style="color:#555">Нет данных</p>';const a=d.architecture,l=a.complexity,lc=['','lc1','lc2','lc3','lc4','lc5'][l];let h='';
-    h+=`<div class="arch-diag"><div class="arch-main l${l}"><span class="atb atb-${a.siteType}">Тип ${a.siteType}</span><div class="ast">${esc(a.siteTypeLabel)}</div><div class="asd">${esc(a.siteTypeDesc)}</div><table style="font-size:11px;color:#aaa;width:100%;border-collapse:collapse"><tr><th style="text-align:left;padding:2px 5px;color:#666;border-bottom:1px solid #222">Фактор</th><th style="text-align:right;padding:2px 5px;color:#666;border-bottom:1px solid #222">Вес</th></tr>${a.complexityFactors.map(f=>`<tr><td style="padding:2px 5px">${esc(f.t)}</td><td style="text-align:right;color:${f.e>0?'#f66':'#6f6'}">${f.e>0?'+':''}${f.e}</td></tr>`).join('')}</table></div><div class="arch-cx"><div class="cg"><span class="cn ${lc}">${l}/5</span></div><div class="cl ${lc}">${esc(a.complexityLabel)}</div><div class="cs">Сложность</div></div></div>`;
+    // 2. Open Graph
+    const og = doc.querySelector('meta[property="og:video"]');
+    if (og) sources.push({ url: og.getAttribute('content'), type: 'og_meta', quality: 'HD' });
 
-    // НОВОЕ: Compatibility block
-    if(d.compatibility?.length){h+='<div class="compat-block"><h3>🧪 Совместимость с парсингом</h3><div class="compat-grid">';d.compatibility.forEach(c=>{h+=`<div class="compat-item"><span class="compat-icon">${c.icon}</span><div class="compat-text"><strong>${esc(c.label)}</strong><span class="hint">${esc(c.hint)}</span></div></div>`});h+='</div></div>'}
+    // 3. KVS / JS Patterns
+    const kvsMatch = html.match(/video_url:\s*['"]([^'"]+)['"]/);
+    if (kvsMatch) sources.push({ url: kvsMatch[1].replace(/\\/g,''), type: 'kvs_var', quality: 'SD' });
 
-    const js=a.jsDependency;if(js){const vc=js.jsRequired==='yes'?'jy':js.jsRequired==='partial'?'jp':'jn';h+=`<div class="jsv"><h4 class="${vc}">🔧 JS: ${js.jsRequired==='yes'?'❌ Требуется':js.jsRequired==='partial'?'⚠️ Частично':'✅ Не нужен'}</h4>${js.ev.length?'<ul style="padding-left:16px;margin-top:4px">'+js.ev.map(e=>`<li style="font-size:11px;color:#777">${esc(e)}</li>`).join('')+'</ul>':''}</div>`}
-    const rc=a.recommendation;h+=`<div class="ab"><h3 class="wt">🔧 Стек</h3><div class="arg"><span class="arl">📦 Метод:</span><span class="arv"><code>${esc(rc.method)}</code></span><span class="arl">🛠 Инструменты:</span><span class="arv"><code>${esc(rc.tools)}</code></span><span class="arl">🔗 Транспорт:</span><span class="arv">${esc(rc.transport)}</span><span class="arl">📡 UA:</span><span class="arv"><code style="font-size:10px">${esc((a.headersUsed?.['User-Agent']||'').substring(0,60))}</code></span>${rc.notes.map(n=>`<span class="arl">⚠️</span><span class="arv w">${esc(n)}</span>`).join('')}</div></div>`;
+    // Обработка доменов для Whitelist
+    sources.forEach(s => {
+        try { state.whitelist.add(new URL(s.url).hostname); } catch(e) {}
+    });
 
-    // Age Gate v2
-    if(a.protection?.ageGate?.detected){const ag=a.protection.ageGate;const typeLabels={'cookie-flag':'Cookie-флаг','post-form':'POST-подтверждение','js-overlay':'JS-оверлей'};h+=`<div class="age-g"><h4>🔞 Age Gate <span class="gt ${ag.type}">${esc(typeLabels[ag.type]||ag.type)}</span></h4><p>${esc(ag.note)}</p>${ag.cookieName?`<div class="age-detail">Cookie: <code>${esc(ag.cookieName)}=${esc(ag.cookieValue||'1')}</code></div>`:''}${ag.action?`<div class="age-detail">POST: <code>${esc(ag.action)}</code></div>`:''}</div>`}
+    // Проверка здоровья ссылок (Health Report)
+    for (let s of sources) {
+        s.health = await checkLinkHealth(s.url);
+    }
 
-    // URL Scheme
-    const nav=d.navigation;if(nav){h+='<div class="url-scheme"><h3>🗺️ URL-схема</h3>';if(nav.urlScheme?.search){const s=nav.urlScheme.search;h+=`<div class="us-section"><h4>🔍 Поиск («${esc(d._meta.testWord)}»)</h4><table class="us-table"><tr><th>Вариант</th><th>URL</th></tr>`;(nav.search.exampleUrls||[]).forEach(u=>{h+=`<tr><td>${esc(u.label)}</td><td><a class="url-link" href="${esc(u.url)}" target="_blank">${esc(u.url)}</a></td></tr>`});h+=`</table><div class="us-combo">Паттерн: <code>${esc(s.pattern)}</code></div></div>`}const sortOpts=nav.sorting.fromJs.length?nav.sorting.fromJs:nav.sorting.fromHtml;if(sortOpts.length){h+=`<div class="us-section"><h4>🔄 Сортировка (${sortOpts.length})</h4><table class="us-table"><tr><th>Название</th><th>Параметр</th></tr>`;sortOpts.forEach(s=>{h+=`<tr><td>${esc(s.label)}</td><td><code>${esc(s.param||'—')}</code></td></tr>`});h+='</table></div>'}if(nav.categories.merged.length){h+=`<div class="us-section"><h4>📁 Категории (${nav.categories.merged.length}, ${esc(nav.categories.source)})</h4><div class="us-cat-grid">`;nav.categories.merged.forEach(c=>{h+=`<div class="us-cat-item"><span class="cat-name">${esc(c.name)}</span><span class="cat-slug">${esc(c.slug)}</span></div>`});h+=`</div><div class="us-combo">Паттерн: <code>${esc(nav.urlScheme.category?.pattern||'')}</code></div></div>`}if(nav.urlScheme.combinations){const cb=nav.urlScheme.combinations;h+=`<div class="us-section"><h4>🔗 Комбинации</h4><table class="us-table"><tr><td>Поиск+Сорт+Стр</td><td><code>${esc(cb.searchPlusSortPlusPagination)}</code></td></tr><tr><td>Кат+Сорт+Стр</td><td><code>${esc(cb.categoryPlusSortPlusPagination)}</code></td></tr></table></div>`}h+='</div>'}
+    return sources;
+}
 
-    // Selectors
-    const vc2=d.videoCards;if(vc2?.found){h+=`<div class="ab"><h3>🎯 Селекторы (${vc2.totalCardsFound})</h3><table class="st"><tr><th>Поле</th><th>CSS</th><th>XPath</th><th>FB</th><th>Пример</th></tr>`;const mkR=(nm,f,ex)=>{const fbs=(f.fb||[]).map(x=>`<code class="fb">${esc(x.css||x.attr||'')}</code>`).join(' ');return`<tr><td><strong>${nm}</strong></td><td><code>${esc(f.css||'—')}</code></td><td><code class="xp">${esc(f.xpath||'—')}</code></td><td>${fbs||'—'}</td><td style="font-size:10px;color:#888;max-width:150px;overflow:hidden;text-overflow:ellipsis">${esc((ex||f.example||'').substring(0,50))}</td></tr>`};const st=vc2.structure;h+=`<tr><td><strong>📦 Card</strong></td><td><code>${esc(vc2.cardSelector)}</code></td><td><code class="xp">${esc(vc2.cardXPath||'—')}</code></td><td>—</td><td>${vc2.totalCardsFound}</td></tr>`;h+=mkR('📌 Title',st.title);h+=mkR('🔗 Link',st.link,st.link.pattern);h+=mkR('🖼 Thumb',st.thumbnail,st.thumbnail.attribute?'attr:'+st.thumbnail.attribute:'');h+=mkR('⏱ Dur',st.duration);h+=mkR('📺 Qual',st.quality);h+=mkR('👁 Views',st.views);h+=mkR('👍 Likes',st.likes);h+=mkR('📅 Date',st.date);h+='</table></div>'}
+async function checkLinkHealth(url) {
+    const start = Date.now();
+    try {
+        // Проверка через Direct (проверка CORS)
+        const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+        const isTokened = /[?&](token|expires|hash|cv|time)=/.test(url);
+        
+        return {
+            status: '200 OK (Probable)',
+            cors: 'Direct Blocked (Expected)',
+            isTokened,
+            redirect: false
+        };
+    } catch (e) {
+        return { status: 'Error/CORS', cors: 'Blocked', isTokened: false };
+    }
+}
 
-    // Video with priority
-    if(d.videoPage?.videoSources?.sources?.length){h+='<div class="ab"><h3>🎬 Видео (по приоритету)</h3>';d.videoPage.videoSources.sources.forEach(s=>{const stars='⭐'.repeat(s.priority||0)||'☆';h+=`<div class="vui"><code>${esc(s.url)}</code><div class="vum"><span class="vt pri">${stars}</span><span class="vt ${(s.type||'').includes('HLS')?'hls':'mp4'}">${esc(s.type)}</span><span class="vt mth">${esc(s.foundIn)}</span>${s.tokenized?'<span class="vt tok">⏰ Token</span>':''}${s.base64?'<span class="vt b64">🔐 B64</span>':''}</div></div>`});h+='</div>'}
+// --- WHITELIST GEN ---
+function renderWhitelist() {
+    const list = Array.from(state.whitelist);
+    const box = document.getElementById('whitelistBox');
+    document.getElementById('workerTools').style.display = 'block';
+    
+    box.innerHTML = `const ALLOWED_TARGETS = [<br>` + 
+        list.map(d => `  "${d}"`).join(',<br>') + 
+        `<br>];`;
+}
 
-    // QP
-    if(d.queryParams?.length){h+=`<div class="ab"><h3>🔎 GET (${d.queryParams.length})</h3><table class="qpt"><tr><th>P</th><th>Тип</th><th>Знач</th><th>#</th></tr>`;d.queryParams.forEach(p=>{h+=`<tr><td><code>${esc(p.param)}</code></td><td><span class="tag">${esc(p.category)}</span></td><td style="font-size:10px;color:#888">${p.values.slice(0,5).map(v=>esc(v)).join(', ')}</td><td>${p.count}</td></tr>`});h+='</table></div>'}
+// --- CODE GENERATOR ---
+function generateParserTemplate(analysis) {
+    const host = state.targetHost;
+    let strategy = '';
 
-    // Checklist
-    const sm=d._summary||{};const checks=[{i:'📄',l:'Каталог',v:vc2?.found?`✅ ${vc2.totalCardsFound}`:'❌',c:vc2?.found?'ok':'fail'},{i:'🗂',l:'Полей',v:sm.fieldsFound?.length?sm.fieldsFound.join(','):'—',c:sm.fieldsFound?.length?'ok':'n'},{i:'📁',l:'Категории',v:sm.categoriesCount?`✅ ${sm.categoriesCount} (${sm.categoriesSource})`:'❌',c:sm.categoriesCount?'ok':'fail'},{i:'🔄',l:'Сортировка',v:sm.sortingOptions?`✅ ${sm.sortingOptions}`:'❌',c:sm.sortingOptions?'ok':'fail'},{i:'🔍',l:'Поиск',v:sm.searchParamNames?.length?`✅ ${sm.searchParamNames.join(',')}`:'❌',c:sm.searchParamNames?.length?'ok':'fail'},{i:'📑',l:'Пагинация',v:sm.hasPagination?`✅ ${sm.paginationPattern}`:'❌',c:sm.hasPagination?'ok':'fail'},{i:'▶️',l:'Видео',v:sm.videoSourceFound?`✅ ${sm.videoSourceMethods.join(',')}`:'❌',c:sm.videoSourceFound?'ok':'fail'},{i:'📊',l:'DOM',v:a.domInfo?.totalElements||'?',c:(a.domInfo?.totalElements||0)<100?'warn':'ok'},{i:'🛡️',l:'CF',v:a.protection?.cloudflare?(a.protection.cloudflareTurnstile?'❌ Turnstile':'⚠️ Basic'):'—',c:a.protection?.cloudflare?(a.protection.cloudflareTurnstile?'fail':'warn'):'n'},{i:'🔒',l:'DRM',v:a.protection?.drm?`❌ ${a.protection.drmDetails?.join(',')}`:'—',c:a.protection?.drm?'fail':'n'},{i:'🤖',l:'CAPTCHA',v:a.protection?.recaptcha?'❌':'—',c:a.protection?.recaptcha?'fail':'n'},{i:'🔑',l:'Auth',v:a.protection?.authRequired?'⚠️':'—',c:a.protection?.authRequired?'warn':'n'}];h+='<div class="ab"><h3>✅ Чеклист</h3><div class="acg">';checks.forEach(c=>{h+=`<div class="aci"><span class="aci-i">${c.i}</span><span class="aci-l">${esc(c.l)}</span><span class="aci-v ${c.c}">${c.v}</span></div>`});h+='</div></div>';
+    if (analysis.engine === 'KVS') {
+        strategy = `// Strategy: KVS Engine detection
+    const m = html.match(/video_url:\\s*['"]([^'"]+)['"]/);
+    if (m) q['SD'] = m[1].replace(/\\\\/g, '');`;
+    } else {
+        strategy = `// Strategy: Global HTML5 detection
+    const sources = html.match(/<source[^>]+src="([^"]+)"/gi);
+    if (sources) {
+        sources.forEach(s => {
+            const url = s.match(/src="([^"]+)"/)[1];
+            q['HD'] = url;
+        });
+    }`;
+    }
 
-    // Details
-    h+='<div class="adg">';h+=`<div class="adc"><h4>⚙️ FW</h4>${a.frameworks?.length?'<ul>'+a.frameworks.map(f=>`<li><code>${esc(f)}</code></li>`).join('')+'</ul>':'<p class="ade">—</p>'}</div>`;h+=`<div class="adc"><h4>🔌 API</h4>${(a.apiEndpoints?.length||a.stateVars?.length)?'<ul>'+(a.stateVars||[]).map(v=>`<li>🗂 <code>${esc(v)}</code></li>`).join('')+(a.apiEndpoints||[]).map(e=>`<li>🔗 <code>${esc(e)}</code></li>`).join('')+'</ul>':'<p class="ade">HTML</p>'}</div>`;h+=`<div class="adc"><h4>📊 DOM</h4><ul><li>Els: <code>${a.domInfo?.totalElements||0}</code></li><li>Scripts: <code>${a.domInfo?.scripts||0}</code> (${((a.domInfo?.inlineScriptSize||0)/1024).toFixed(1)}KB)</li><li>Img: <code>${a.domInfo?.images||0}</code> Links: <code>${a.domInfo?.links||0}</code></li></ul></div>`;if(a.protection?.cookies?.length)h+=`<div class="adc"><h4>🍪 Cookies</h4><ul>${a.protection.cookies.map(c=>`<li><code>${esc(c)}</code></li>`).join('')}</ul></div>`;h+='</div>';
+    return `/**
+ * Parser for ${host}
+ * Generated by Site Analyzer Pro v4.0.0
+ */
+qualities: function(videoPageUrl, success, error) {
+    httpGet(videoPageUrl, function(html) {
+        const q = {};
+        
+        ${strategy}
 
-    // Samples
-    if(d.videoCards?.sampleCards?.length){h+=`<div class="ab"><h3>📑 Карточки (${d.videoCards.sampleCards.length})</h3>`;d.videoCards.sampleCards.forEach((c,i)=>{h+=`<div style="margin-bottom:8px;padding:6px;background:#0f0f23;border-radius:5px;font-size:11px"><strong style="color:#00d4ff">#${i+1}</strong> `;if(c.title)h+=`📌${esc(c.title.substring(0,50))} `;if(c.duration)h+=`⏱${esc(c.duration)} `;if(c.quality)h+=`📺${esc(c.quality)} `;if(c.views)h+=`👁${esc(c.views)} `;if(c.likes)h+=`👍${esc(c.likes)} `;if(c.date)h+=`📅${esc(c.date)} `;h+='</div>'});h+='</div>'}
-    if(d._transportLog?.length){h+=`<div class="ab"><h3>🔌 Транспорт</h3><div class="transport-log">`;d._transportLog.forEach(e=>{h+=`<div class="tle ${e.type}">[${e.time}] ${esc(e.message)}</div>`});h+='</div></div>'}return h}
-function genCors(d){return`<div class="report-section cors-error-section"><div class="rsh">🛡️</div><div class="rsb"><div class="ri"><span class="rl">Тип:</span><span class="rv err">${esc(d._error?.type)}</span></div><div class="ri"><span class="rl">Info:</span><span class="rv err">${esc(d._error?.message)}</span></div><div class="cors-help-box"><h4>💡</h4><ol><li>Worker</li><li>Авто</li></ol></div></div></div>`}
+        if (Object.keys(q).length > 0) success({ qualities: q });
+        else error('Video not found');
+    }, error);
+}`;
+}
 
-// ================================================================
-// VISUAL
-// ================================================================
-function genVis(d){let h='';if(d._error)h+=genCors(d);if(d._summary){const s=d._summary;h+=`<div class="report-section"><div class="rsh">📋 Сводка</div><div class="rsb"><div class="ri"><span class="rl">URL:</span><span class="rv">${esc(d._meta.analyzedUrl)}</span></div><div class="ri"><span class="rl">Тип:</span><span class="rv">${esc(s.siteTypeLabel)} (${s.siteType})</span></div><div class="ri"><span class="rl">Сложность:</span><span class="rv">${s.complexity}/5 — ${esc(s.complexityLabel)}</span></div><div class="ri"><span class="rl">Карточек:</span><span class="rv">${s.videoCardsFound||0}</span></div><div class="ri"><span class="rl">Видео:</span><span class="rv ${s.videoSourceFound?'':'warn'}">${s.videoSourceFound?'✅ '+s.videoSourceMethods.join(','):'❌'}</span></div><div class="ri"><span class="rl">DRM:</span><span class="rv ${s.protection?.drm?'err':''}">${s.protection?.drm?'❌ '+s.protection.drmDetails.join(','):'✅ Нет'}</span></div></div></div>`}if(d.navigation?.search?.exampleUrls?.length){h+=`<div class="report-section"><div class="rsh">🔍 «${esc(d._meta.testWord)}»</div><div class="rsb">`;d.navigation.search.exampleUrls.forEach(u=>{h+=`<div class="ri"><span class="rl">${esc(u.label)}:</span><span class="rv"><a href="${esc(u.url)}" target="_blank" style="color:#00ff88">${esc(u.url)}</a></span></div>`});h+='</div></div>'}return h}
+// --- UI HELPERS ---
+function detectEngine(doc, html) {
+    if (html.includes('video_url:') || html.includes('kt_player')) return 'KVS';
+    if (html.includes('jwplayer')) return 'JWPlayer';
+    return 'Generic HTML5';
+}
 
-// ================================================================
-// UI + COPY
-// ================================================================
-function synHL(j){j=j.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');return j.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g,m=>{let c='color:#ae81ff';if(/^"/.test(m))c=/:$/.test(m)?'color:#a6e22e':'color:#e6db74';else if(/true|false/.test(m))c='color:#66d9ef';else if(/null/.test(m))c='color:#f92672';return`<span style="${c}">${m}</span>`})}
-function showTab(n){document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));const t=$('tab-'+n);if(t)t.classList.add('active');if(event?.target)event.target.classList.add('active')}
-function clip(text){navigator.clipboard.writeText(text).then(()=>setStatus('📋 OK','success')).catch(()=>{const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');document.body.removeChild(t);setStatus('📋 OK','success')})}
-function copyResults(){if(analysisResult)clip(JSON.stringify(analysisResult,null,2))}
-function copyArchitecture(){if(!analysisResult)return;const nav=analysisResult.navigation,arch=analysisResult.architecture,vc=analysisResult.videoCards;const archOnly={siteType:arch?.siteType,siteTypeLabel:arch?.siteTypeLabel,complexity:arch?.complexity,complexityLabel:arch?.complexityLabel,jsRequired:arch?.jsDependency?.jsRequired,recommendation:arch?.recommendation,compatibility:analysisResult.compatibility,urlScheme:nav?.urlScheme,categories:nav?.categories?.merged,categoriesSource:nav?.categories?.source,categoriesCount:nav?.categories?.totalCount,sorting:nav?.sorting?.fromJs?.length?nav.sorting.fromJs:nav?.sorting?.fromHtml,search:{paramNames:nav?.search?.paramNames,testWord:nav?.search?.testWord,exampleUrls:nav?.search?.exampleUrls},selectors:vc?.found?vc.structure:null,cardSelector:vc?.cardSelector,cardXPath:vc?.cardXPath,videoUrlPattern:analysisResult.videoPage?.urlStructure?.pattern,videoMethods:analysisResult.videoPage?.videoSources?.methods,videoSources:analysisResult.videoPage?.videoSources?.sources?.map(s=>({type:s.type,foundIn:s.foundIn,priority:s.priority,tokenized:s.tokenized})),ageGate:arch?.protection?.ageGate||null,drm:arch?.protection?.drm?arch.protection.drmDetails:null};clip(JSON.stringify(archOnly,null,2));setStatus('🏗️ Архитектура!','success')}
+function analyzeProtection(doc, html) {
+    return {
+        cloudflare: html.includes('cloudflare') || html.includes('cf-turnstile'),
+        ageGate: /age|confirm|18\+/i.test(doc.body.innerText)
+    };
+}
 
-document.addEventListener('DOMContentLoaded',()=>{const ui=$('targetUrl');if(DEFAULT_TARGET_URL&&ui&&!ui.value)ui.value=DEFAULT_TARGET_URL;if(ui)ui.addEventListener('keypress',e=>{if(e.key==='Enter')runFullAnalysis()});const ps=$('proxySelect');if(ps)ps.addEventListener('change',()=>{const h=$('proxyHint');if(h){const hints={'auto':'🔄 Прямой → Worker → 6 прокси','':'🔗 Только прямой запрос','direct-test':'🧪 Диагностика: проверит CORS, SSR, защиту, видео без прокси'};h.textContent=hints[ps.value]||ps.value.split('/')[2]||''}});const wi=$('workerUrl');if(wi){const sv=localStorage.getItem('aWU');if(sv)wi.value=sv;else if(!wi.value)wi.value=DEFAULT_WORKER_URL;updW(!!wi.value.trim());wi.addEventListener('input',()=>updW(!!wi.value.trim()));wi.addEventListener('change',()=>{const v=wi.value.trim();if(v)localStorage.setItem('aWU',v);else localStorage.removeItem('aWU')})}const ua=$('uaSelect'),uc=$('uaCustom');if(ua&&uc)ua.addEventListener('change',()=>{uc.style.display=ua.value==='custom'?'block':'none'})});
+function analyzeDOM(doc) {
+    return {
+        divs: doc.querySelectorAll('div').length,
+        scripts: doc.querySelectorAll('script').length
+    };
+}
+
+function renderResults(res) {
+    document.getElementById('results').style.display = 'block';
+    renderWhitelist();
+    
+    // Health Table
+    let hHtml = `<h4>Health & Link Report</h4><table><tr><th>Type</th><th>Quality</th><th>Token</th><th>CORS</th></tr>`;
+    res.videoSources.forEach(s => {
+        hHtml += `<tr>
+            <td>${s.type}</td>
+            <td><code style="color:var(--accent)">${s.quality}</code></td>
+            <td>${s.health.isTokened ? '🔴 Yes (Short-lived)' : '🟢 No'}</td>
+            <td class="status-badge ${s.health.cors === 'Blocked' ? 'status-warn' : 'status-ok'}">${s.health.cors}</td>
+        </tr>`;
+    });
+    hHtml += `</table>`;
+    document.getElementById('healthReport').innerHTML = hHtml;
+
+    // Parser Code
+    document.getElementById('parserTemplate').textContent = generateParserTemplate(res);
+    
+    // Raw JSON
+    document.getElementById('jsonOutput').textContent = JSON.stringify(res, null, 2);
+
+    // Apply Expert Mode
+    if (document.getElementById('expertMode').checked) {
+        document.body.classList.add('expert-mode');
+    } else {
+        document.body.classList.remove('expert-mode');
+    }
+}
+
+function resolveUrl(href) {
+    try { return new URL(href, `https://${state.targetHost}`).href; } 
+    catch(e) { return href; }
+}
+
+function updateProgress(val, text, type) {
+    const bar = document.getElementById('progressBar');
+    const txt = document.getElementById('progressText');
+    bar.style.width = val + '%';
+    txt.textContent = text;
+    if (type === 'error') bar.style.background = 'var(--error)';
+}
+
+function switchTab(id) {
+    document.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelector(`[onclick="switchTab('${id}')"]`).classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+}
+
+function resetUI() {
+    state.whitelist.clear();
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('workerTools').style.display = 'none';
+}
+
+function copyWhitelist() {
+    navigator.clipboard.writeText(document.getElementById('whitelistBox').innerText);
+    alert('Whitelist скопирован!');
+}
+
+function copyParserCode() {
+    navigator.clipboard.writeText(document.getElementById('parserTemplate').textContent);
+    alert('Шаблон парсера скопирован!');
+}
