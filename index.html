@@ -3,93 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v3.4</title>
+    <title>Site Analyzer Pro v4.0.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="ver">v3.4</span></h1>
-    <p class="desc">JS-парсинг, URL-схемы, совместимость, Age Gate 3 типа, DRM, Turnstile</p>
+    <h1>🔍 Parser Assistant <span class="ver">v4.0.0</span></h1>
+    <p class="desc">Engine Detection • Worker Whitelist • Smart Extractor • Code Gen</p>
 
-    <!-- Worker -->
-    <div class="worker-block">
-        <div class="worker-block-header">
-            <label for="workerUrl">⚡ Worker</label>
-            <span id="workerStatusBadge" class="worker-badge inactive">○</span>
+    <!-- Настройки -->
+    <div class="settings-grid">
+        <div class="worker-block">
+            <label for="workerUrl">⚡ Cloudflare Worker Proxy</label>
+            <input type="text" id="workerUrl" value="https://zonaproxy.777b737.workers.dev" placeholder="https://myproxy.workers.dev">
+            <p class="hint">Используется для обхода CORS при глубоком анализе.</p>
         </div>
-        <div class="worker-input-row">
-            <input type="text" id="workerUrl" placeholder="https://myproxy.workers.dev" autocomplete="off" spellcheck="false" value="https://zonaproxy.777b737.workers.dev">
-        </div>
-        <p class="worker-hint">Приоритетный транспорт. <code>?mode=extract</code>. localStorage.</p>
-    </div>
-
-    <!-- URL + Test word -->
-    <div class="input-row-2">
-        <div class="input-group flex-3">
-            <label for="targetUrl">URL:</label>
-            <input type="text" id="targetUrl" placeholder="https://example.com/" value="">
-        </div>
-        <div class="input-group flex-1">
-            <label for="testWord">Тестовое слово:</label>
-            <input type="text" id="testWord" value="wife" placeholder="wife">
+        
+        <div class="expert-toggle">
+            <label class="switch">
+                <input type="checkbox" id="expertMode">
+                <span class="slider"></span>
+            </label>
+            <span>Expert Mode (DOM Stats)</span>
         </div>
     </div>
 
-    <!-- Proxy + UA -->
-    <div class="input-row-2">
-        <div class="input-group flex-2">
-            <label for="proxySelect">Прокси:</label>
-            <select id="proxySelect">
-                <option value="auto" selected>🔄 Авто</option>
-                <option value="">🔗 Прямой (без прокси)</option>
-                <option value="direct-test">🧪 Тест без прокси (диагностика)</option>
-                <option value="https://api.allorigins.win/raw?url=">allorigins</option>
-                <option value="https://corsproxy.io/?">corsproxy</option>
-                <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs</option>
-                <option value="https://thingproxy.freeboard.io/fetch/">thingproxy</option>
-                <option value="https://cors-anywhere.herokuapp.com/">cors-anywhere</option>
-                <option value="https://cors.bridged.cc/">cors.bridged</option>
-            </select>
-            <p id="proxyHint" class="proxy-hint"></p>
-        </div>
-        <div class="input-group flex-2">
-            <label for="uaSelect">User-Agent:</label>
-            <select id="uaSelect">
-                <option value="desktop" selected>🖥 Desktop</option>
-                <option value="mobile">📱 Mobile</option>
-                <option value="bot">🤖 Bot</option>
-                <option value="custom">✏️ Custom</option>
-            </select>
-            <input type="text" id="uaCustom" class="ua-custom" placeholder="Mozilla/5.0 ..." style="display:none">
-        </div>
+    <!-- Основной ввод -->
+    <div class="main-input-group">
+        <input type="text" id="targetUrl" placeholder="https://example.com/video/..." value="">
+        <button id="btnAnalyze" onclick="runAnalysis()">🚀 Начать анализ</button>
     </div>
 
-    <!-- Buttons -->
-    <div class="buttons">
-        <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Полный анализ</button>
-        <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
-        <button id="btnCopyArch" onclick="copyArchitecture()" disabled>🏗️ Архитектура</button>
-    </div>
-
-    <div id="corsIndicator" class="cors-indicator" style="display:none"></div>
     <div id="status" class="status"></div>
-    <div id="progress-container" class="progress-container" style="display:none">
-        <div id="progress-bar" class="progress-bar"></div>
-        <span id="progress-text" class="progress-text">0%</span>
+    
+    <!-- Индикаторы и прогресс -->
+    <div class="progress-wrapper">
+        <div id="progressBar" class="progress-bar"></div>
+        <div id="progressText" class="progress-text">Ожидание...</div>
     </div>
 
-    <div id="results" class="results" style="display:none">
-        <h2>📊 Результаты</h2>
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
-            <button class="tab" onclick="showTab('formatted')">JSON</button>
-            <button class="tab" onclick="showTab('raw')">Raw</button>
-            <button class="tab" onclick="showTab('visual')">Визуальный</button>
+    <!-- Инструменты Воркера (NEW) -->
+    <div id="workerTools" class="worker-tools-box" style="display:none">
+        <div class="tool-header">
+            <h3>📋 Worker Configuration</h3>
+            <button class="btn-copy" onclick="copyWhitelist()">Копировать домены</button>
         </div>
-        <div id="tab-arch" class="tab-content active"><div id="archReport"></div></div>
-        <div id="tab-formatted" class="tab-content"><pre id="jsonFormatted"></pre></div>
-        <div id="tab-raw" class="tab-content"><textarea id="jsonRaw" readonly></textarea></div>
-        <div id="tab-visual" class="tab-content"><div id="visualReport"></div></div>
+        <div id="whitelistBox" class="whitelist-box"></div>
+        <p class="hint">Добавьте эти домены в <code>ALLOWED_TARGETS</code> вашего воркера.</p>
+    </div>
+
+    <!-- Результаты -->
+    <div id="results" class="results-area" style="display:none">
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('smart')">💎 Smart Extractor</button>
+            <button class="tab" onclick="switchTab('logic')">🧠 Parser Logic</button>
+            <button class="tab" onclick="switchTab('raw')">📦 Raw Data</button>
+        </div>
+
+        <!-- Таб: Smart Extractor -->
+        <div id="tab-smart" class="tab-content active">
+            <div id="healthReport"></div>
+            <div id="qualityMapper"></div>
+        </div>
+
+        <!-- Таб: Parser Logic -->
+        <div id="tab-logic" class="tab-content">
+            <div class="code-gen-header">
+                <h4>Generated extractQualities() template:</h4>
+                <button onclick="copyParserCode()">Copy Code</button>
+            </div>
+            <pre id="parserTemplate" class="code-box"></pre>
+        </div>
+
+        <!-- Таб: Raw -->
+        <div id="tab-raw" class="tab-content">
+            <pre id="jsonOutput"></pre>
+        </div>
     </div>
 </div>
 <script src="parser.js"></script>
