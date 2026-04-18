@@ -21,7 +21,7 @@ h1{text-align:center;color:#00d4ff;font-size:2em;margin-bottom:6px}
 .flex-check{flex:0 0 auto;min-width:120px;display:flex;align-items:flex-end}
 .checkbox-label{display:flex;align-items:center;gap:6px;padding:9px 14px;background:#1a1a3e;border:2px solid #333366;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;color:#888;white-space:nowrap;user-select:none;transition:.2s}
 .checkbox-label:hover{border-color:#555}
-.checkbox-label input{display:none}
+.checkbox-label input{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
 .checkbox-label.active{border-color:#ff8800;color:#ff8800;background:#2e1a0d}
 .proxy-hint{font-size:11px;color:#666;margin-top:3px;min-height:14px}
 .buttons{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
