@@ -219,7 +219,7 @@ result._transportLog=transportLog;catalogData=result;videoPageData=null;analysis
 // ================================================================
 async function runVideoAnalysis(){const ui=$('targetUrl'),url=ui?.value.trim();if(!url){setStatus('❌ URL!','error');return}try{new URL(url)}catch{setStatus('❌ Bad URL','error');return}
 const base=catalogData?catalogData._meta.baseUrl:baseOf(url);
-if(catalogData&&hostOf(url)!==hostOf(catalogData._meta.baseUrl)){setStatus('⚠️ Другой домен — каталог сброшен','loading');catalogData=null}
+
 const btn=$('btnAnalyze');if(btn){btn.disabled=true;btn.textContent='🎬⏳'}updCI('hidden');transportLog=[];
 const vd={analyzed:false,url,title:null,videoTitle:null,poster:null,metadata:{},playerStructure:null,externalScripts:[],urlFormat:null,workerWhitelist:null,parserFlow:null,compatibility:null};
 try{setStatus('🎬 Видео...','loading');setProgress(15,'🎬','video-mode');
