@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v4.1.0</title>
+    <title>Site Structure Analyzer v4.2.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="ver">v4.1.0</span></h1>
-    <p class="desc">Catalog+Video merge · Quality Map · CDN Whitelist · Parser Flow · parserConfig</p>
+    <h1>🔍 Site Structure Analyzer <span class="ver">v4.2.0</span></h1>
+    <p class="desc">Catalog cards fix · No duplicates · mainPagePath · searchPattern · sampleCards</p>
 
     <div class="worker-block">
         <div class="worker-block-header">
@@ -49,7 +49,6 @@
                 <option value="https://corsproxy.io/?">corsproxy</option>
                 <option value="https://api.codetabs.com/v1/proxy?quest=">codetabs</option>
             </select>
-            <p id="proxyHint" class="proxy-hint"></p>
         </div>
         <div class="input-group flex-2">
             <label for="uaSelect">User-Agent:</label>
@@ -64,7 +63,6 @@
     <div class="buttons">
         <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Анализ каталога</button>
         <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
-        <button id="btnCopyArch" onclick="copyArchitecture()" disabled>🏗️ Архитектура</button>
         <button id="btnCopyConfig" onclick="copyParserConfig()" disabled>⚙️ Config</button>
         <button id="btnCopyWhitelist" onclick="copyWhitelist()" disabled>📡 Whitelist</button>
     </div>
