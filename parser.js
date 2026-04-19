@@ -1,8 +1,9 @@
 // ================================================================
-// SITE STRUCTURE ANALYZER v4.2.0
+// SITE STRUCTURE ANALYZER v4.2.1
 // Fixed: card detection (aggressive fallbacks), no duplicates,
 // mainPagePath, searchPattern, sampleCards with real data,
 // clean JSON structure
+// license_code detection
 // ================================================================
 const DEFAULT_WORKER_URL="https://zonaproxy.777b737.workers.dev";
 let analysisResult=null,catalogData=null,videoPageData=null,transportLog=[];
@@ -229,8 +230,191 @@ const hlsM=allJS.match(/(https?:\/\/[^\s"']+\.m3u8[^\s"']*)/);if(hlsM&&!r.qualit
 if(!Object.keys(r.qualityMap).length){const mp4R=/(https?:\/\/[^\s"']+\.mp4[^\s"']*)/g;let mm,c=0;while((mm=mp4R.exec(allJS))&&c<3){const u=mm[1];if(u.includes('preview')||u.includes('thumb'))continue;const qm2=u.match(/_(\d+)\.mp4/);const lb=qm2?qm2[1]+'p':('src'+c);if(!r.qualityMap[lb]){r.qualityMap[lb]={url:u,source:'js-regex',method:'mp4-brute',domain:hostOf(u)};c++}}}
 for(const[q,info]of Object.entries(r.qualityMap)){try{const u=new URL(info.url);let tpl=u.pathname.replace(/\/\d{4,}\//g,'/{id}/').replace(/\/[a-f0-9]{16,}\//gi,'/{hash}/').replace(/_\d{3,4}\.mp4/,'_{quality}.mp4');r.videoUrlTemplates.push({template:u.origin+tpl,domain:info.domain,variables:tpl.match(/\{[^}]+\}/g)||[]})}catch{}}
 const seen=new Set();r.videoUrlTemplates=r.videoUrlTemplates.filter(t=>{if(seen.has(t.template))return false;seen.add(t.template);return true});
+
+// kt_player license_code analysis
+r.ktDecode = null;
+if (r.jsConfigs.some(c => c.type === 'kt_player')) {
+    const licenseCode = extractLicenseCode(allJS, allJS);
+    if (licenseCode) {
+        r.ktDecode = { licenseCode, analysis: null, decodeSnippet: null };
+    }
+}
+
 const lcJS=allJS.toLowerCase();for(const p of PLAYER_SIGS)for(const pat of p.pats)if(lcJS.includes(pat)){r.player=p.name;break}
 return r}
+
+function detectKtPlayerScript(doc, extScripts) {
+    // 1. Ищем в <script src>
+    for (const src of extScripts) {
+        if (/kt_player|kt-player|ktplayer/i.test(src)) return src;
+    }
+    // 2. Ищем по паттерну /player/*.js
+    for (const src of extScripts) {
+        if (/\/player\/[^"']+\.js/i.test(src)) return src;
+    }
+    // 3. Ищем в inline JS ссылку на скрипт
+    const allJS = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n');
+    const m = allJS.match(/["']((?:https?:)?\/\/[^"']*kt_player[^"']*\.js[^"']*)/i)
+           || allJS.match(/["'](\/player\/[^"']+\.js)/i);
+    if (m) return m[1];
+    return null;
+}
+
+function extractLicenseCode(html, allJS) {
+    const combined = html + '\n' + allJS;
+    // Паттерны где license_code задаётся
+    const patterns = [
+        /license_code\s*[:=]\s*['"]([^'"]+)['"]/,
+        /license_code\s*[:=]\s*['"]([A-Za-z0-9$]+)['"]/,
+        /kt_player\s*\([^)]*['"]([A-Za-z0-9$]{10,})['"]\s*\)/,  // аргумент конструктора
+        /var\s+license\s*=\s*['"]([^'"]+)['"]/,
+    ];
+    for (const p of patterns) {
+        const m = combined.match(p);
+        if (m && m[1] && m[1].length >= 8) return m[1];
+    }
+    return null;
+}
+
+function analyzeKtDecodeFunction(ktCode) {
+    const r = {
+        found: false,
+        chunkSize: null,       // 1 или 2 цифры
+        modulo: null,           // обычно 9
+        direction: null,        // 'forward' или 'reverse'
+        tailHandling: null,     // что делает с остатком
+        rawSnippet: null,       // кусок кода для ручной проверки
+        decodeFunctionName: null,
+        algorithm: null         // описание словами
+    };
+
+    if (!ktCode || ktCode.length < 100) return r;
+
+    // Ищем функцию с license_code.substr или /function/ маркером
+    // Типичные паттерны в minified kt_player:
+
+    // Паттерн 1: function(a){...a.substr...}  с /function/ проверкой
+    const funcBlockRe = /function\s*\w*\s*\([^)]*\)\s*\{[^{}]*license_code[^{}]*substr[^{}]*\}/gi;
+    let funcMatch = ktCode.match(funcBlockRe);
+
+    // Паттерн 2: более широкий поиск — блок содержащий substr и modulo
+    if (!funcMatch) {
+        const widerRe = /\{[^{}]{0,2000}license_code[^{}]{0,500}substr[^{}]{0,1000}\}/g;
+        funcMatch = ktCode.match(widerRe);
+    }
+
+    // Паттерн 3: ищем get_video_url или подобное
+    if (!funcMatch) {
+        const gvuRe = /get_video_url\s*[:=]\s*function\s*\([^)]*\)\s*\{([^}]{100,3000})\}/;
+        const m = ktCode.match(gvuRe);
+        if (m) funcMatch = [m[0]];
+    }
+
+    // Паттерн 4: prototype метод с substr
+    if (!funcMatch) {
+        const protoRe = /prototype\.\w+\s*=\s*function[^{]*\{[^}]*substr[^}]*\}/g;
+        const all = ktCode.match(protoRe) || [];
+        funcMatch = all.filter(b => b.includes('license') || b.includes('hash') || b.includes('substr'));
+    }
+
+    if (!funcMatch || !funcMatch.length) return r;
+
+    r.found = true;
+    const block = funcMatch[0];
+    r.rawSnippet = block.substring(0, 500);
+
+    // --- Извлекаем параметры алгоритма ---
+
+    // chunkSize: substr(i, 1) vs substr(i, 2)
+    const chunkMatch = block.match(/substr\s*\(\s*\w+\s*,\s*(\d)\s*\)/);
+    if (chunkMatch) {
+        r.chunkSize = parseInt(chunkMatch[1]);
+    } else {
+        // Иногда через переменную: var n=2; ...substr(i,n)
+        const varChunk = block.match(/(?:var|let|const)\s+(\w+)\s*=\s*(\d)\s*;[^}]*substr\s*\(\s*\w+\s*,\s*\1\s*\)/);
+        if (varChunk) r.chunkSize = parseInt(varChunk[2]);
+        else r.chunkSize = 1; // default
+    }
+
+    // modulo: % 9, % 7, % chunkLen
+    const modMatch = block.match(/%\s*(\d+)/);
+    if (modMatch) {
+        r.modulo = parseInt(modMatch[1]);
+    } else {
+        // Переменная модуль
+        const varMod = block.match(/(?:var|let|const)\s+(\w+)\s*=\s*(\d+)\s*;[^}]*%\s*\1/);
+        if (varMod) r.modulo = parseInt(varMod[2]);
+    }
+
+    // direction: определяем по порядку итерации
+    if (/for\s*\([^)]*=\s*\w+\.length[^)]*--/i.test(block) ||
+        /reverse\s*\(\)/.test(block)) {
+        r.direction = 'reverse';
+    } else if (/for\s*\([^)]*=\s*0[^)]*\+\+/.test(block) ||
+               /for\s*\([^)]*=\s*0[^)]*\+=/.test(block)) {
+        r.direction = 'forward';
+    } else {
+        r.direction = 'forward'; // default
+    }
+
+    // tailHandling: что делает с остатком строки
+    if (block.includes('.slice(') || block.includes('.substring(')) {
+        r.tailHandling = 'slice-remainder';
+    } else if (block.includes('if') && /length\s*[<>%]/.test(block)) {
+        r.tailHandling = 'conditional-skip';
+    } else {
+        r.tailHandling = 'none';
+    }
+
+    // Ищем имя функции
+    const nameMatch = block.match(/(?:prototype\.(\w+)|(\w+)\s*[:=]\s*function)/);
+    if (nameMatch) r.decodeFunctionName = nameMatch[1] || nameMatch[2];
+
+    // Генерируем описание алгоритма
+    r.algorithm = `license_code.substr(i, ${r.chunkSize}) → parseInt → % ${r.modulo || '?'} → shift (${r.direction})${r.tailHandling !== 'none' ? ' + ' + r.tailHandling : ''}`;
+
+    return r;
+}
+
+function buildKtDecodeSnippet(analysis, licenseCode) {
+    if (!analysis.found) return null;
+
+    const chunk = analysis.chunkSize || 1;
+    const mod = analysis.modulo || 9;
+    const dir = analysis.direction || 'forward';
+
+    let code = `// kt_player decode — auto-generated from analysis\n`;
+    code += `// chunkSize=${chunk}, modulo=${mod}, direction=${dir}\n`;
+    code += `function decodeVideoUrl(hash, licenseCode) {\n`;
+    code += `  licenseCode = licenseCode || ${JSON.stringify(licenseCode || '')};\n`;
+    code += `  var codes = [];\n`;
+    code += `  for (var i = 0; i < licenseCode.length; i += ${chunk}) {\n`;
+    code += `    codes.push(parseInt(licenseCode.substr(i, ${chunk})) % ${mod});\n`;
+    code += `  }\n`;
+
+    if (dir === 'reverse') {
+        code += `  // Reverse iteration\n`;
+        code += `  var decoded = '';\n`;
+        code += `  var ci = codes.length - 1;\n`;
+        code += `  for (var j = hash.length - 1; j >= 0; j--) {\n`;
+        code += `    decoded = String.fromCharCode(hash.charCodeAt(j) - codes[ci % codes.length]) + decoded;\n`;
+        code += `    ci--;\n`;
+        code += `    if (ci < 0) ci = codes.length - 1;\n`;
+        code += `  }\n`;
+    } else {
+        code += `  // Forward iteration\n`;
+        code += `  var decoded = '';\n`;
+        code += `  for (var j = 0; j < hash.length; j++) {\n`;
+        code += `    decoded += String.fromCharCode(hash.charCodeAt(j) - codes[j % codes.length]);\n`;
+        code += `  }\n`;
+    }
+
+    code += `  return decoded;\n`;
+    code += `}\n`;
+
+    return code;
+}
+
 function isVideoScript(src){if(!src)return false;if(/jquery|react|vue|angular|bootstrap|analytics|tracking|ads|cdn|polyfill|webpack|chunk/i.test(src))return false;return/video\d+|clip\d+|media\d+|stream\d+|embed\d+|config\d+|player.*\d{3,}/i.test(src)}
 
 // ================================================================
@@ -292,6 +476,7 @@ cfg.URL_PATTERNS={};if(nav.urlScheme?.search)cfg.URL_PATTERNS.search=nav.urlSche
 if(cat?.videoCards?.found){cfg.CARD_SELECTORS=cat.videoCards.cardSelectors;cfg.linkPattern=cat.videoCards.linkPattern;
 cfg.sampleCards=cat.videoCards.sampleCards.slice(0,3)}
 if(vid?.playerStructure){const ps=vid.playerStructure;cfg.QUALITY_MAP=ps.qualityMap;cfg.VIDEO_URL_TEMPLATES=ps.videoUrlTemplates;cfg.PLAYER=ps.player;cfg.VIDEO_RULES=ps.jsConfigs?.length?ps.jsConfigs:[];cfg.JSON_ENCODINGS=ps.jsonEncodings?.length?uniq(ps.jsonEncodings.map(e=>e.variable)):[]
+if(ps.ktDecode?.analysis?.found){cfg.KT_DECODE={licenseCode:ps.ktDecode.licenseCode,algorithm:ps.ktDecode.analysis.algorithm,chunkSize:ps.ktDecode.analysis.chunkSize,modulo:ps.ktDecode.analysis.modulo,direction:ps.ktDecode.analysis.direction,decodeSnippet:ps.ktDecode.decodeSnippet}}
 }else{cfg.VIDEO_RULES=[];cfg._note='Для VIDEO_RULES → анализ видео-страницы (🎬)'}
 if(vid?.urlFormat?.cleanUrlRules?.length)cfg.CLEAN_URL_RULES=vid.urlFormat.cleanUrlRules;
 if(cat?.protection?.requiredHeaders)cfg.REQUIRED_HEADERS=cat.protection.requiredHeaders;
@@ -344,6 +529,32 @@ vd.externalScripts=[];
 for(const vs of videoScripts){const full=resolve(vs,base);try{logT('ExtJS:'+vs);const jsCode=await fetchPage(full);const info={src:vs,fetched:true,size:jsCode.length,videoFound:false};
 const extP=analyzePlayer(doc,jsCode,base);if(Object.keys(extP.qualityMap).length){info.videoFound=true;Object.assign(vd.playerStructure.qualityMap,extP.qualityMap);vd.playerStructure.jsConfigs.push(...extP.jsConfigs);vd.playerStructure.jsonEncodings.push(...extP.jsonEncodings);vd.playerStructure.videoUrlTemplates.push(...extP.videoUrlTemplates);if(extP.player&&!vd.playerStructure.player)vd.playerStructure.player=extP.player}
 vd.externalScripts.push(info)}catch(e){vd.externalScripts.push({src:vs,fetched:false,error:e.message})}}
+
+// kt_player decode analysis — ищем kt_player.js и парсим алгоритм
+if (vd.playerStructure?.ktDecode || vd.playerStructure?.jsConfigs?.some(c => c.type === 'kt_player')) {
+    const ktSrc = detectKtPlayerScript(doc, extSrcs);
+    if (ktSrc) {
+        try {
+            logT('KT: ' + ktSrc);
+            const ktFull = resolve(ktSrc, base);
+            const ktCode = await fetchPage(ktFull);
+            const analysis = analyzeKtDecodeFunction(ktCode);
+            const licenseCode = vd.playerStructure.ktDecode?.licenseCode || extractLicenseCode(html + '\n' + allInline, allInline);
+            if (!vd.playerStructure.ktDecode) vd.playerStructure.ktDecode = {};
+            vd.playerStructure.ktDecode.analysis = analysis;
+            vd.playerStructure.ktDecode.ktPlayerJsUrl = ktSrc;
+            vd.playerStructure.ktDecode.ktPlayerJsSize = ktCode.length;
+            if (analysis.found && licenseCode) {
+                vd.playerStructure.ktDecode.licenseCode = licenseCode;
+                vd.playerStructure.ktDecode.decodeSnippet = buildKtDecodeSnippet(analysis, licenseCode);
+            }
+            logT('KT: ' + (analysis.found ? '✅ algorithm found' : '❌ not found'), analysis.found ? 'success' : 'fail');
+        } catch (e) {
+            logT('KT: ' + e.message, 'fail');
+        }
+    }
+}
+
 if(videoScripts[0])vd.externalJsPattern=videoScripts[0].replace(/\d+/g,'\\d+').replace(/\./g,'\\.');
 setProgress(70,'🎬 Format');
 vd.urlFormat=detectUrlFormat(html+'\n'+allInline);
@@ -453,6 +664,9 @@ d.videoPage.videoUrlTemplates.forEach(t=>{h+=`<tr><td><code>${esc(t.template)}</
 
 // JS Configs
 if(d.videoPage?.jsConfigs?.length){h+='<div class="ab"><h3>🎮 JS Player</h3>';d.videoPage.jsConfigs.forEach(c=>{h+=`<strong style="color:#0df">${esc(c.type)}</strong> `;c.fields.forEach(f=>{h+=`<code style="color:#fa4;font-size:9px">${esc(f.quality)}</code>: <code style="color:#0f8;font-size:9px">${esc((f.url||'').substring(0,50))}</code> `});h+=`<br>Regex: <code style="color:#888;font-size:9px">${esc(c.regex)}</code><br>`});h+='</div>'}
+
+// KT Decode
+if(d.videoPage?.jsConfigs?.length||d.parserConfig?.KT_DECODE){const kt=d.parserConfig?.KT_DECODE;if(kt){h+=`<div class="ab"><h3 class="rt">🔑 kt_player Decode</h3><div class="arg"><span class="arl">license_code:</span><span class="arv"><code>${esc(kt.licenseCode)}</code></span><span class="arl">Algorithm:</span><span class="arv"><code>${esc(kt.algorithm)}</code></span><span class="arl">Chunk:</span><span class="arv">${kt.chunkSize}</span><span class="arl">Modulo:</span><span class="arv">${kt.modulo}</span><span class="arl">Direction:</span><span class="arv">${kt.direction}</span></div>${kt.decodeSnippet?`<pre style="background:#0a0a1e;color:#0f8;padding:8px;border-radius:5px;font-size:10px;margin-top:8px;white-space:pre-wrap">${esc(kt.decodeSnippet)}</pre>`:''}</div>`}}
 
 // External JS (only useful ones)
 const extJS=d.videoPage?.externalScripts;
