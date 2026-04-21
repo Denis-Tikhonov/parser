@@ -1,5 +1,5 @@
 // ================================================================
-// SITE STRUCTURE ANALYZER v4.2.1
+// SITE STRUCTURE ANALYZER v4.2.2
 // Redirect chain · KVS engine · /resolve · license_code · kt_player
 // ================================================================
 const DEFAULT_WORKER_URL="https://zonaproxy.777b737.workers.dev";
@@ -372,28 +372,43 @@ function analyzeKtDecodeFunction(ktCode) {
 }
 
 function buildKtDecodeSnippet(analysis, licenseCode) {
-    if (!analysis.found) return null;
-    const chunk = analysis.chunkSize || 1, mod = analysis.modulo || 9, dir = analysis.direction || 'forward';
-    let code = `// kt_player decode — auto-generated\n// chunkSize=${chunk}, modulo=${mod}, direction=${dir}\n`;
-    code += `function decodeVideoUrl(hash, licenseCode) {\n`;
-    code += `  licenseCode = licenseCode || ${JSON.stringify(licenseCode || '')};\n`;
+    if (!analysis.found && !licenseCode) return null;
+    const chunk = analysis?.chunkSize || 1;
+    const mod = analysis?.modulo || 9;
+    const dir = analysis?.direction || 'forward';
+
+    let code = `// kt_player decode — auto-generated\n`;
+    code += `// chunkSize=${chunk}, modulo=${mod}, direction=${dir}\n\n`;
+    code += `function decodeVideoUrl(encodedUrl, licenseCode) {\n`;
+    code += `  licenseCode = licenseCode || ${JSON.stringify(licenseCode || '')};\n\n`;
+    code += `  // Remove /function/N/ prefix\n`;
+    code += `  var funcMatch = encodedUrl.match(/\\/function\\/(\\d)\\/(.*)/);  \n`;
+    code += `  var encoded = funcMatch ? funcMatch[2] : encodedUrl;\n`;
+    code += `  var funcType = funcMatch ? parseInt(funcMatch[1]) : 0;\n\n`;
+    code += `  // Build shift codes from license\n`;
     code += `  var codes = [];\n`;
     code += `  for (var i = 0; i < licenseCode.length; i += ${chunk}) {\n`;
-    code += `    codes.push(parseInt(licenseCode.substr(i, ${chunk})) % ${mod});\n`;
-    code += `  }\n`;
+    code += `    var n = parseInt(licenseCode.substr(i, ${chunk}));\n`;
+    code += `    if (!isNaN(n)) codes.push(n % ${mod});\n`;
+    code += `  }\n\n`;
+
     if (dir === 'reverse') {
+        code += `  // Reverse decode\n`;
         code += `  var decoded = '', ci = codes.length - 1;\n`;
-        code += `  for (var j = hash.length - 1; j >= 0; j--) {\n`;
-        code += `    decoded = String.fromCharCode(hash.charCodeAt(j) - codes[ci % codes.length]) + decoded;\n`;
+        code += `  for (var j = encoded.length - 1; j >= 0; j--) {\n`;
+        code += `    decoded = String.fromCharCode(encoded.charCodeAt(j) - codes[ci]) + decoded;\n`;
         code += `    ci--; if (ci < 0) ci = codes.length - 1;\n`;
         code += `  }\n`;
     } else {
+        code += `  // Forward decode\n`;
         code += `  var decoded = '';\n`;
-        code += `  for (var j = 0; j < hash.length; j++) {\n`;
-        code += `    decoded += String.fromCharCode(hash.charCodeAt(j) - codes[j % codes.length]);\n`;
+        code += `  for (var j = 0; j < encoded.length; j++) {\n`;
+        code += `    decoded += String.fromCharCode(encoded.charCodeAt(j) - codes[j % codes.length]);\n`;
         code += `  }\n`;
     }
-    code += `  return decoded;\n}\n`;
+
+    code += `  return decoded;\n`;
+    code += `}\n`;
     return code;
 }
 
@@ -452,6 +467,97 @@ const JS_CFG = [
     { type: 'xvideos', fields: [{ re: /setVideoUrlHigh\s*\(\s*['"]([^'"]+)['"]\)/, fb: '720p' }, { re: /setVideoUrlLow\s*\(\s*['"]([^'"]+)['"]\)/, fb: '480p' }, { re: /setVideoHLS\s*\(\s*['"]([^'"]+)['"]\)/, fb: 'HLS' }] },
     { type: 'jwplayer', fields: [{ re: /file\s*:\s*['"]([^'"]+\.(?:mp4|m3u8)[^'"]*)['"]/, fb: 'auto' }] }
 ];
+
+// ================================================================
+// KT_PLAYER INLINE DECODE (attempt without downloading kt_player.js)
+// ================================================================
+function tryKtDecode(url, licenseCode) {
+    if (!url || !licenseCode) return null;
+
+    // Check if URL has /function/N/ marker
+    const funcMatch = url.match(/\/function\/(\d)\/(.*)/);
+    if (!funcMatch) return null;
+
+    const funcType = parseInt(funcMatch[1]);
+    const encoded = funcMatch[2];
+
+    if (!encoded || encoded.length < 10) return null;
+
+    try {
+        if (funcType === 0) {
+            // Method 0: charCode shift with license_code chunks
+            return ktDecodeMethod0(encoded, licenseCode);
+        } else if (funcType === 1) {
+            // Method 1: reverse + charCode shift
+            return ktDecodeMethod1(encoded, licenseCode);
+        }
+    } catch (e) {
+        // Decode failed — return null, will try after downloading kt_player.js
+        return null;
+    }
+    return null;
+}
+
+function ktDecodeMethod0(encoded, licenseCode) {
+    // Standard KVS decode: split license to digits, mod, shift chars
+    const codes = [];
+    for (let i = 0; i < licenseCode.length; i++) {
+        const ch = licenseCode[i];
+        const num = parseInt(ch);
+        if (!isNaN(num)) codes.push(num % 9);
+    }
+    if (!codes.length) return null;
+
+    let decoded = '';
+    for (let i = 0; i < encoded.length; i++) {
+        decoded += String.fromCharCode(encoded.charCodeAt(i) - codes[i % codes.length]);
+    }
+
+    // Validate — decoded should look like a URL
+    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4') || decoded.includes('.m3u8'))) {
+        return decoded;
+    }
+
+    // Try alternative: 2-char chunks
+    const codes2 = [];
+    for (let i = 0; i + 1 < licenseCode.length; i += 2) {
+        const num = parseInt(licenseCode.substr(i, 2));
+        if (!isNaN(num)) codes2.push(num % 9);
+    }
+    if (!codes2.length) return null;
+
+    let decoded2 = '';
+    for (let i = 0; i < encoded.length; i++) {
+        decoded2 += String.fromCharCode(encoded.charCodeAt(i) - codes2[i % codes2.length]);
+    }
+    if (decoded2.startsWith('http') && (decoded2.includes('/get_file/') || decoded2.includes('.mp4') || decoded2.includes('.m3u8'))) {
+        return decoded2;
+    }
+
+    return null;
+}
+
+function ktDecodeMethod1(encoded, licenseCode) {
+    // Method 1: reverse iteration
+    const codes = [];
+    for (let i = 0; i < licenseCode.length; i++) {
+        const num = parseInt(licenseCode[i]);
+        if (!isNaN(num)) codes.push(num % 9);
+    }
+    if (!codes.length) return null;
+
+    let decoded = '';
+    let ci = codes.length - 1;
+    for (let i = encoded.length - 1; i >= 0; i--) {
+        decoded = String.fromCharCode(encoded.charCodeAt(i) - codes[ci]) + decoded;
+        ci--; if (ci < 0) ci = codes.length - 1;
+    }
+
+    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4'))) {
+        return decoded;
+    }
+    return null;
+}
 
 function analyzePlayer(doc, allJS, base) {
     const r = { videoTag: null, sources: [], jsConfigs: [], jsonEncodings: [], qualityMap: {}, videoUrlTemplates: [], player: null };
@@ -523,17 +629,47 @@ function analyzePlayer(doc, allJS, base) {
     }
     const seen = new Set(); r.videoUrlTemplates = r.videoUrlTemplates.filter(t => { if (seen.has(t.template)) return false; seen.add(t.template); return true });
 
-    // kt_player license_code
+
+    // kt_player license_code decode — try to decode URLs before redirect detection
     r.ktDecode = null;
     if (r.jsConfigs.some(c => c.type === 'kt_player')) {
-        const licenseCode = extractLicenseCode(allJS, allJS);
-        if (licenseCode) r.ktDecode = { licenseCode, analysis: null, decodeSnippet: null };
-    }
+    const licenseCode = extractLicenseCode(allJS, allJS);
+    if (licenseCode) {
+        r.ktDecode = { licenseCode, analysis: null, decodeSnippet: null };
 
-    // Redirect chain detection from found video URLs
-    const allVideoSrcs = [...r.sources.map(v => v.src), ...Object.values(r.qualityMap).map(v => v.url)].filter(Boolean);
-    r.redirectChain = detectRedirectPattern(allVideoSrcs, hostOf(base));
-    r.kvsEngine = detectKvsEngine(allJS, allJS);
+        // Try inline decode if URL contains /function/
+        for (const [q, info] of Object.entries(r.qualityMap)) {
+            if (info.url && info.url.includes('/function/')) {
+                const decoded = tryKtDecode(info.url, licenseCode);
+                if (decoded) {
+                    info.urlEncoded = info.url;
+                    info.url = decoded;
+                    info.decoded = true;
+                    info.domain = hostOf(decoded);
+                }
+            }
+        }
+        // Also decode jsConfigs fields
+        for (const cfg of r.jsConfigs) {
+            if (cfg.type !== 'kt_player') continue;
+            for (const f of cfg.fields) {
+                if (f.url && f.url.includes('/function/')) {
+                    const decoded = tryKtDecode(f.url, licenseCode);
+                    if (decoded) {
+                        f.urlEncoded = f.url;
+                        f.url = decoded;
+                        f.decoded = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Redirect chain detection from found video URLs (now using decoded URLs)
+const allVideoSrcs = [...r.sources.map(v => v.src), ...Object.values(r.qualityMap).map(v => v.url)].filter(Boolean);
+r.redirectChain = detectRedirectPattern(allVideoSrcs, hostOf(base));
+r.kvsEngine = detectKvsEngine(allJS, allJS);
 
     const lcJS = allJS.toLowerCase();
     for (const p of PLAYER_SIGS) for (const pat of p.pats) if (lcJS.includes(pat)) { r.player = p.name; break }
@@ -630,7 +766,15 @@ function generateParserConfig(cat, vid) {
 
     if (vid?.playerStructure) {
         const ps = vid.playerStructure;
-        cfg.QUALITY_MAP = ps.qualityMap; cfg.VIDEO_URL_TEMPLATES = ps.videoUrlTemplates;
+        cfg.QUALITY_MAP = {};
+	for (const [q, info] of Object.entries(ps.qualityMap || {})) {
+	    cfg.QUALITY_MAP[q] = { ...info };
+	    if (info.decoded) {
+	        cfg.QUALITY_MAP[q]._note = 'decoded from license_code';
+	        cfg.QUALITY_MAP[q].urlEncoded = info.urlEncoded;
+	    }
+	} 
+	cfg.VIDEO_URL_TEMPLATES = ps.videoUrlTemplates;
         cfg.PLAYER = ps.player; cfg.VIDEO_RULES = ps.jsConfigs?.length ? ps.jsConfigs : [];
         cfg.JSON_ENCODINGS = ps.jsonEncodings?.length ? uniq(ps.jsonEncodings.map(e => e.variable)) : [];
 
@@ -1054,7 +1198,12 @@ function genArch(d) {
     const qm = d.videoPage?.qualityMap;
     if (qm && Object.keys(qm).length) {
         h += '<div class="ab"><h3 class="gt">🎬 Quality Map</h3><table class="qm-table"><tr><th>Q</th><th>URL</th><th>Source</th><th>Method</th><th>Domain</th></tr>';
-        for (const [q, info] of Object.entries(qm)) h += `<tr><td><strong>${esc(q)}</strong></td><td><code>${esc((info.url || '').substring(0, 70))}</code></td><td>${esc(info.source)}</td><td>${esc(info.method)}</td><td><code>${esc(info.domain)}</code></td></tr>`;
+        for (const [q, info] of Object.entries(qm)) {
+    const decoded = info.decoded ? ' <span style="color:#0f8;font-size:8px">✅ decoded</span>' : '';
+    h += `<tr><td><strong>${esc(q)}</strong>${decoded}</td><td><code>${esc((info.url || '').substring(0, 70))}</code>`;
+    if (info.urlEncoded) h += `<br><span style="color:#888;font-size:8px">encoded: ${esc(info.urlEncoded.substring(0, 50))}...</span>`;
+    h += `</td><td>${esc(info.source)}</td><td>${esc(info.method)}</td><td><code>${esc(info.domain)}</code></td></tr>`;
+}
         h += '</table></div>';
     }
 
