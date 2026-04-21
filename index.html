@@ -35,7 +35,6 @@
             <label class="checkbox-label" id="videoModeLabel">
                 <input type="checkbox" id="videoModeCheck"><span>🎬 Видео</span>
             </label>
-	    <button onclick="runRedirectAnalysis()" title="Анализ CDN redirect URL">🔄</button>
         </div>
     </div>
 
@@ -63,6 +62,7 @@
 
     <div class="buttons">
         <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Анализ каталога</button>
+	<button onclick="runRedirectAnalysis()" title="Анализ CDN redirect URL">🔄</button>
         <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
         <button id="btnCopyConfig" onclick="copyParserConfig()" disabled>⚙️ Config</button>
         <button id="btnCopyWhitelist" onclick="copyWhitelist()" disabled>📡 Whitelist</button>
