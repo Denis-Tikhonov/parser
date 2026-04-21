@@ -1066,9 +1066,6 @@ async function runVideoAnalysis() {
             // Rebuild code
             vd.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + vd.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
         }
-            // Rebuild code
-            vd.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + vd.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
-        }
 
         setProgress(85, '🎬 Flow');
         vd.parserFlow = buildParserFlow(base, catalogData?.videoCards, vd.playerStructure, catalogData?.searchPattern, prot);
