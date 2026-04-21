@@ -927,29 +927,53 @@ async function runVideoAnalysis() {
 
         if (videoScripts[0]) vd.externalJsPattern = videoScripts[0].replace(/\d+/g, '\\d+').replace(/\./g, '\\.');
 
-        // Redirect chain resolution via Worker /resolve
+        // Redirect chain resolution via Worker /resolve (fresh fetch for non-expired hash)
         setProgress(62, '🎬 Redirect...');
         if (vd.playerStructure?.redirectChain?.requiresFollow) {
-            const testUrls = vd.playerStructure.redirectChain.patterns
-                .filter(p => p.url && (p.url.startsWith('http') || p.url.startsWith('//')))
-                .slice(0, 3);
             vd.redirectResolution = [];
-            for (const pat of testUrls) {
-                try {
-                    const fullUrl = pat.url.startsWith('//') ? 'https:' + pat.url : pat.url;
-                    logT('Resolving: ' + fullUrl.substring(0, 80) + '...');
-                    const data = await resolveRedirectChain(fullUrl, 8);
+            try {
+                logT('Fresh fetch for resolve...');
+                const freshHtml = await fetchPage(url);
+                const freshDoc = parseH(freshHtml);
+                const freshInline = Array.from(freshDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
+                const freshAll = freshHtml + '\n' + freshInline;
+                
+                // Extract all fresh video URLs
+                const freshPatterns = [
+                    /video_url\s*[:=]\s*['"]([^'"]+)['"]/,
+                    /video_alt_url\s*[:=]\s*['"]([^'"]+)['"]/
+                ];
+                const freshUrls = [];
+                for (const pat of freshPatterns) {
+                    const m = freshAll.match(pat);
+                    if (m && m[1]) {
+                        let u = m[1];
+                        const funcM = u.match(/function\/\d\/(https?:\/\/.+)/);
+                        if (funcM) u = funcM[1];
+                        else if (!u.startsWith('http')) u = resolve(u, base);
+                        if (u.startsWith('http')) freshUrls.push(u);
+                    }
+                }
+                
+                // Resolve first fresh URL (one is enough to discover CDN domains)
+                const urlToResolve = freshUrls[0];
+                if (urlToResolve) {
+                    logT('Fresh URL: ' + urlToResolve.substring(0, 80));
+                    const data = await resolveRedirectChain(urlToResolve, 8);
                     vd.redirectResolution.push({
-                        original: fullUrl, final: data.final, chain: data.chain,
+                        original: urlToResolve, final: data.final, chain: data.chain,
                         redirectCount: data.redirects || 0, contentType: data.contentType,
                         contentLength: data.contentLength, resumable: data.resumable,
-                        pattern: pat.type, error: data.error || null, fallback: data.fallback || false
+                        pattern: 'kvs_get_file', error: data.error || null, fallback: data.fallback || false
                     });
-                    logT('→ ' + (data.redirects || 0) + ' redirects → ' + (data.final || '').substring(0, 80), data.error ? 'warning' : 'success');
-                } catch (e) {
-                    logT('Resolve error: ' + e.message, 'fail');
-                    vd.redirectResolution.push({ original: pat.url, error: e.message, pattern: pat.type });
+                    logT('→ ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 80),
+                        data.error ? 'warning' : 'success');
+                } else {
+                    logT('No fresh video URL found', 'fail');
                 }
+            } catch (e) {
+                logT('Fresh resolve error: ' + e.message, 'fail');
+                vd.redirectResolution.push({ original: url, error: e.message, pattern: 'kvs_get_file' });
             }
         }
 
