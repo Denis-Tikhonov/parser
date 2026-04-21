@@ -933,7 +933,7 @@ async function runVideoAnalysis() {
             vd.redirectResolution = [];
             try {
                 logT('Fresh fetch for resolve...');
-                const freshHtml = await fetchPage(url);
+                const freshHtml = await fetchPage(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now());
                 const freshDoc = parseH(freshHtml);
                 const freshInline = Array.from(freshDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
                 const freshAll = freshHtml + '\n' + freshInline;
