@@ -482,7 +482,10 @@ function tryKtDecode(url, licenseCode) {
     const encoded = funcMatch[2];
 
     if (!encoded || encoded.length < 10) return null;
-
+    // If what follows /function/N/ is already a valid URL — just extract it
+    if (encoded.startsWith('http') && (encoded.includes('/get_file/') || encoded.includes('.mp4') || encoded.includes	    ('.m3u8'))) {
+    return encoded;
+    }
     try {
         if (funcType === 0) {
             // Method 0: charCode shift with license_code chunks
