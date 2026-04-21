@@ -1066,6 +1066,173 @@ async function runVideoAnalysis() {
 }
 
 // ================================================================
+// REDIRECT URL ANALYSIS
+// ================================================================
+async function runRedirectAnalysis() {
+    const redirectUrl = prompt('Вставьте CDN URL (финальная ссылка после редиректа):', '');
+    if (!redirectUrl || !redirectUrl.startsWith('http')) {
+        setStatus('❌ Нужен URL начинающийся с http', 'error');
+        return;
+    }
+
+    const btn = $('btnAnalyze');
+    if (btn) { btn.disabled = true; btn.textContent = '🔄⏳'; }
+    setStatus('🔄 Анализ redirect URL...', 'loading');
+    setProgress(10, '🔄 Redirect...', 'video-mode');
+    transportLog = [];
+
+    try {
+        logT('Redirect URL: ' + redirectUrl);
+        const w = getW();
+        if (!w) { setStatus('❌ Worker не настроен', 'error'); return; }
+
+        // HEAD request via worker /resolve
+        setProgress(30, '🔄 HEAD...');
+        const resolveUrl = w + '/resolve?url=' + encodeURIComponent(redirectUrl) + '&max=8';
+        const a = new AbortController, t = setTimeout(() => a.abort(), 20000);
+        const r = await fetch(resolveUrl, { signal: a.signal });
+        clearTimeout(t);
+
+        let data = {};
+        if (r.ok) {
+            data = await r.json();
+            logT('Resolved: ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 80), 'success');
+        } else {
+            logT('Resolve HTTP ' + r.status, 'fail');
+            data = { error: 'HTTP ' + r.status, final: redirectUrl, redirects: 0, chain: [redirectUrl] };
+        }
+
+        setProgress(60, '🔄 Analyzing...');
+
+        // Parse URL structure
+        let urlInfo = {};
+        try {
+            const u = new URL(data.final || redirectUrl);
+            urlInfo = {
+                hostname: u.hostname,
+                pathname: u.pathname,
+                params: Object.fromEntries(u.searchParams.entries()),
+                protocol: u.protocol,
+            };
+        } catch {}
+
+        // Extract useful info from params
+        const params = urlInfo.params || {};
+        const cdnInfo = {
+            url: data.final || redirectUrl,
+            domain: urlInfo.hostname,
+            resumable: data.resumable || false,
+            contentType: data.contentType || '',
+            contentLength: data.contentLength || '',
+            acceptRanges: data.acceptRanges || '',
+            redirects: data.redirects || 0,
+            chain: data.chain || [redirectUrl],
+            // CDN-specific params
+            expireTime: params.exp_time ? new Date(parseInt(params.exp_time) * 1000).toISOString() : null,
+            sign: params.sign || null,
+            tag: params.tag || null,
+            bitrate: params.lr || params.br || null,
+            maxBitrate: params.lra || null,
+            // File info from path
+            filename: urlInfo.pathname ? urlInfo.pathname.split('/').pop() : null,
+        };
+
+        // Quality from filename
+        const qMatch = (cdnInfo.filename || '').match(/_(\d+p)\./);
+        cdnInfo.quality = qMatch ? qMatch[1] : null;
+
+        // Video ID from path
+        const idMatch = (urlInfo.pathname || '').match(/\/(\d{4,})\//);
+        cdnInfo.videoId = idMatch ? idMatch[1] : null;
+
+        // Is link expired?
+        if (cdnInfo.expireTime) {
+            cdnInfo.expired = new Date(cdnInfo.expireTime) < new Date();
+            cdnInfo.expiresIn = cdnInfo.expired ? 'EXPIRED' :
+                Math.round((new Date(cdnInfo.expireTime) - new Date()) / 60000) + ' min';
+        }
+
+        // Size
+        if (cdnInfo.contentLength) {
+            const bytes = parseInt(cdnInfo.contentLength);
+            cdnInfo.sizeHuman = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' :
+                bytes > 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
+        }
+
+        setProgress(80, '🔄 Whitelist...');
+
+        // Update whitelist with discovered domains
+        if (videoPageData?.workerWhitelist) {
+            const domainsToAdd = new Set();
+            domainsToAdd.add(cdnInfo.domain);
+            if (data.chain) {
+                data.chain.forEach(cu => {
+                    try { domainsToAdd.add(new URL(cu).hostname); } catch {}
+                });
+            }
+            for (const d of domainsToAdd) {
+                if (d && !videoPageData.workerWhitelist.required.some(w => w.domain === d)) {
+                    videoPageData.workerWhitelist.required.push({ domain: d, role: 'CDN (redirect)', required: true });
+                }
+            }
+            videoPageData.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' +
+                videoPageData.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
+        }
+
+        // Store redirect analysis
+        if (!videoPageData) videoPageData = { analyzed: true, url: redirectUrl };
+        videoPageData.redirectAnalysis = cdnInfo;
+
+        // Add to redirectResolution
+        if (!videoPageData.redirectResolution) videoPageData.redirectResolution = [];
+        videoPageData.redirectResolution.push({
+            original: redirectUrl,
+            final: data.final || redirectUrl,
+            chain: data.chain || [redirectUrl],
+            redirectCount: data.redirects || 0,
+            contentType: data.contentType,
+            contentLength: data.contentLength,
+            resumable: data.resumable,
+            pattern: 'cdn_direct',
+            manualInput: true
+        });
+
+        videoPageData._transportLog = transportLog;
+
+        setProgress(90, '🔄 Config...');
+        analysisResult = buildFinalJSON();
+
+        // Add redirect analysis to parserConfig
+        if (analysisResult.parserConfig) {
+            analysisResult.parserConfig.CDN_REDIRECT = {
+                domain: cdnInfo.domain,
+                resumable: cdnInfo.resumable,
+                contentType: cdnInfo.contentType,
+                size: cdnInfo.sizeHuman || cdnInfo.contentLength,
+                quality: cdnInfo.quality,
+                videoId: cdnInfo.videoId,
+                expireTime: cdnInfo.expireTime,
+                expired: cdnInfo.expired,
+                sign: cdnInfo.sign ? '***' + cdnInfo.sign.substring(cdnInfo.sign.length - 8) : null,
+                tag: cdnInfo.tag,
+                bitrate: cdnInfo.bitrate,
+                urlTemplate: cdnInfo.domain + (urlInfo.pathname || '').replace(/\/\d{4,}\//g, '/{id}/').replace(/[a-f0-9]{20,}/g, '{hash}'),
+                note: 'CDN URL analyzed from manual redirect input'
+            };
+        }
+
+        displayResults(analysisResult);
+        setProgress(100, '✅');
+        setStatus('✅ Redirect analyzed! CDN: ' + cdnInfo.domain, 'success');
+
+    } catch (e) {
+        setStatus('❌ ' + e.message, 'error');
+        logT('Redirect error: ' + e.message, 'fail');
+    }
+    if (btn) { btn.disabled = false; btn.textContent = isVideoMode() ? '🎬 Анализ видео' : '🚀 Анализ каталога'; }
+}
+
+// ================================================================
 // DIRECT TEST
 // ================================================================
 async function runDirectTest() {
@@ -1173,6 +1340,7 @@ function buildFinalJSON() {
 async function runFullAnalysis() {
     const pm = ($('proxySelect') || {}).value;
     if (pm === 'direct-test') return runDirectTest();
+    if (pm === 'redirect-test') return runRedirectAnalysis();
     if (isVideoMode()) return runVideoAnalysis();
     return runCatalogAnalysis();
 }
@@ -1266,6 +1434,24 @@ function genArch(d) {
         }
         h += '</div>';
     }
+
+	// CDN Redirect Analysis
+    const cdnR = d.parserConfig?.CDN_REDIRECT;
+    if (cdnR) {
+        h += '<div class="ab"><h3 style="color:#0df">🔗 CDN Redirect Analysis</h3>';
+        h += '<div class="arg">';
+        h += `<span class="arl">Domain:</span><span class="arv"><code>${esc(cdnR.domain)}</code></span>`;
+        h += `<span class="arl">Resumable:</span><span class="arv">${cdnR.resumable ? '✅ Yes' : '❌ No'}</span>`;
+        h += `<span class="arl">Content-Type:</span><span class="arv"><code>${esc(cdnR.contentType)}</code></span>`;
+        if (cdnR.size) h += `<span class="arl">Size:</span><span class="arv">${esc(cdnR.size)}</span>`;
+        if (cdnR.quality) h += `<span class="arl">Quality:</span><span class="arv">${esc(cdnR.quality)}</span>`;
+        if (cdnR.bitrate) h += `<span class="arl">Bitrate:</span><span class="arv">${esc(cdnR.bitrate)}</span>`;
+        if (cdnR.tag) h += `<span class="arl">Tag:</span><span class="arv"><code>${esc(cdnR.tag)}</code></span>`;
+        if (cdnR.expireTime) h += `<span class="arl">Expires:</span><span class="arv" style="color:${cdnR.expired ? '#f55' : '#0f8'}">${cdnR.expired ? '❌ EXPIRED' : '✅ ' + cdnR.expireTime}</span>`;
+        if (cdnR.urlTemplate) h += `<span class="arl">Template:</span><span class="arv"><code>${esc(cdnR.urlTemplate)}</code></span>`;
+        h += '</div></div>';
+    }
+
 
     // Quality Map
     const qm = d.videoPage?.qualityMap;
