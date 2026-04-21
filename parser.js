@@ -929,11 +929,11 @@ async function runVideoAnalysis() {
 
         // Redirect chain resolution via Worker /resolve (fresh fetch for non-expired hash)
         
-        // Redirect chain resolution + CDN domain discovery
+       // Redirect chain resolution + CDN domain discovery
         setProgress(62, '🎬 CDN...');
         if (vd.playerStructure?.redirectChain?.requiresFollow) {
             vd.redirectResolution = [];
-            
+
             // Method 1: Extract CDN domains from page content
             const cdnPatterns = [
                 /["'](https?:\/\/[^"']*cdn[^"']*\.(?:com|net|org|porn)[^"']*)/gi,
@@ -944,7 +944,7 @@ async function runVideoAnalysis() {
                 /poster['":\s]+'?(https?:\/\/[^"'\s]+)/i,
                 /preview_url['":\s]+'?(https?:\/\/[^"'\s]+)/i
             ];
-            
+
             const cdnDomains = new Set();
             const pageContent = html + '\n' + allInline;
             for (const pat of cdnPatterns) {
@@ -952,72 +952,55 @@ async function runVideoAnalysis() {
                 while ((m = pat.exec(pageContent)) !== null) {
                     try {
                         const d = new URL(m[1]).hostname;
-                        if (d !== hostOf(base) && d !== hostOf(url)) {
-                            cdnDomains.add(d);
-                        }
+                        if (d !== hostOf(base) && d !== hostOf(url)) cdnDomains.add(d);
                     } catch {}
                 }
                 pat.lastIndex = 0;
             }
-            
-            // Method 2: Try Worker-side resolve (fresh fetch + extract + HEAD)
-            try {
-                logT('Fresh fetch for resolve...');
-                const freshHtml = await fetchPage(url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now());
-                const freshDoc = parseH(freshHtml);
-                const freshInline = Array.from(freshDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
-                const freshAll = freshHtml + '\n' + freshInline;
-                
-                const freshPatterns = [
-                    /video_url\s*[:=]\s*['"]([^'"]+)['"]/,
-                    /video_alt_url\s*[:=]\s*['"]([^'"]+)['"]/
-                ];
-                const freshUrls = [];
-                for (const pat of freshPatterns) {
-                    const m = freshAll.match(pat);
-                    if (m && m[1]) {
-                        let u = m[1];
-                        const funcM = u.match(/function\/\d\/(https?:\/\/.+)/);
-                        if (funcM) u = funcM[1];
-                        else if (!u.startsWith('http')) u = resolve(u, base);
-                        if (u.startsWith('http')) freshUrls.push(u);
+
+            // Method 2: Worker /resolve-page (fetches page + follows redirects in one session)
+            const w = getW();
+            if (w) {
+                try {
+                    logT('Resolve-page: ' + url.substring(0, 60));
+                    const rpUrl = w + '/resolve-page?url=' + encodeURIComponent(url) + '&max=8';
+                    const a = new AbortController, t = setTimeout(() => a.abort(), 25000);
+                    const r = await fetch(rpUrl, { signal: a.signal });
+                    clearTimeout(t);
+                    if (r.ok) {
+                        const data = await r.json();
+                        logT('Resolve-page: ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 60),
+                            data.error ? 'fail' : 'success');
+                        vd.redirectResolution.push({
+                            original: data.videoUrl || url,
+                            final: data.final,
+                            chain: data.chain,
+                            redirectCount: data.redirects || 0,
+                            contentType: data.contentType,
+                            contentLength: data.contentLength,
+                            resumable: data.resumable,
+                            pattern: 'kvs_get_file',
+                            error: data.error || null,
+                            allVideoUrls: data.allVideoUrls
+                        });
+                    } else {
+                        logT('Resolve-page HTTP ' + r.status, 'fail');
                     }
+                } catch (e) {
+                    logT('Resolve-page: ' + e.message, 'fail');
                 }
-                
-                if (freshUrls[0]) {
-                    logT('Fresh URL: ' + freshUrls[0].substring(0, 80));
-                    const data = await resolveRedirectChain(freshUrls[0], 8);
-                    vd.redirectResolution.push({
-                        original: freshUrls[0], final: data.final, chain: data.chain,
-                        redirectCount: data.redirects || 0, contentType: data.contentType,
-                        contentLength: data.contentLength, resumable: data.resumable,
-                        pattern: 'kvs_get_file', error: data.error || null, fallback: data.fallback || false
-                    });
-                    
-                    // If resolve failed (404/html), note it but still use CDN domains from content
-                    if (data.redirects === 0 && (!data.contentType || data.contentType.includes('html'))) {
-                        logT('Resolve got HTML/404 — hash is session-bound, using CDN from page content', 'warning');
-                        vd.redirectResolution[0].sessionBound = true;
-                        vd.redirectResolution[0].note = 'KVS hash is session-bound — cannot resolve via Worker. CDN domains extracted from page content.';
-                    }
-                }
-            } catch (e) {
-                logT('Resolve error: ' + e.message, 'fail');
             }
-            
-            // Add discovered CDN domains
+
+            // Add discovered CDN domains from content
             if (cdnDomains.size) {
-                logT('CDN domains from content: ' + [...cdnDomains].join(', '), 'success');
+                logT('CDN from content: ' + [...cdnDomains].join(', '), 'success');
                 vd.cdnDomainsFromContent = [...cdnDomains];
             }
-            
-            // Add known KVS CDN patterns
-            const siteHost = hostOf(base);
+
+            // Known KVS CDN patterns
             const kvsKnownCdns = [];
-            // privatehost.com is the most common KVS CDN
             if (pageContent.includes('privatehost.com')) {
                 kvsKnownCdns.push('privatehost.com');
-                // Also add wildcard subdomains found
                 const phM = pageContent.match(/([a-z0-9.-]+\.privatehost\.com)/gi);
                 if (phM) phM.forEach(d => kvsKnownCdns.push(d.toLowerCase()));
             }
@@ -1061,7 +1044,7 @@ async function runVideoAnalysis() {
                 if (!vd.workerWhitelist.required.some(w => w.domain === d)) {
                     vd.workerWhitelist.required.push({ domain: d, role: 'KVS CDN', required: true });
                 }
-             }
+ }
             // Rebuild code
             vd.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + vd.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
         }
