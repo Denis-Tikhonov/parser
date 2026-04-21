@@ -1061,9 +1061,7 @@ async function runVideoAnalysis() {
                 if (!vd.workerWhitelist.required.some(w => w.domain === d)) {
                     vd.workerWhitelist.required.push({ domain: d, role: 'KVS CDN', required: true });
                 }
-            }
-
-
+             }
             // Rebuild code
             vd.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + vd.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
         }
