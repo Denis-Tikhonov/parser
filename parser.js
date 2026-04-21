@@ -934,28 +934,31 @@ async function runVideoAnalysis() {
         if (vd.playerStructure?.redirectChain?.requiresFollow) {
             vd.redirectResolution = [];
 
-            // Method 1: Extract CDN domains from page content
-            const cdnPatterns = [
-                /["'](https?:\/\/[^"']*cdn[^"']*\.(?:com|net|org|porn)[^"']*)/gi,
-                /["'](https?:\/\/[^"']*\.privatehost\.com[^"']*)/gi,
-                /["'](https?:\/\/[^"']*stream[^"']*\.(?:com|net)[^"']*)/gi,
-                /["'](https?:\/\/[^"']*media[^"']*\.(?:com|net)[^"']*)/gi,
-                /timeline_screens_url['":\s]+'?(https?:\/\/[^"'\s]+)/i,
-                /poster['":\s]+'?(https?:\/\/[^"'\s]+)/i,
-                /preview_url['":\s]+'?(https?:\/\/[^"'\s]+)/i
-            ];
-
+// Method 1: Extract CDN domains from page content (fast patterns)
             const cdnDomains = new Set();
             const pageContent = html + '\n' + allInline;
-            for (const pat of cdnPatterns) {
-                let m;
-                while ((m = pat.exec(pageContent)) !== null) {
+            const cdnSimple = [
+                /timeline_screens_url['":,\s]+'?(https?:\/\/[^"'\s,]+)/i,
+                /preview_url['":,\s]+'?(https?:\/\/[^"'\s,]+)/i,
+                /poster['":,\s]+'?(https?:\/\/[^"'\s,]+)/i
+            ];
+            for (const pat of cdnSimple) {
+                const m = pageContent.match(pat);
+                if (m) {
                     try {
                         const d = new URL(m[1]).hostname;
                         if (d !== hostOf(base) && d !== hostOf(url)) cdnDomains.add(d);
                     } catch {}
                 }
-                pat.lastIndex = 0;
+            }
+            // Extract all hostnames that look like CDN
+            const hostRe = /(https?:\/\/[a-z0-9.-]+\.(?:privatehost\.com|cdn[a-z0-9]*\.[a-z.]+))/gi;
+            let hm;
+            while ((hm = hostRe.exec(pageContent)) !== null) {
+                try {
+                    const d = new URL(hm[1]).hostname;
+                    if (d !== hostOf(base)) cdnDomains.add(d);
+                } catch {}
             }
 
             // Method 2: Worker /resolve-page (fetches page + follows redirects in one session)
