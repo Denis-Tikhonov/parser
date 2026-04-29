@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v5.0.0</title>
+    <title>Site Structure Analyzer v6.0.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="ver">v5.0.0</span></h1>
-    <p class="desc">S-strategies · Extended detection · NAME generator · Worker verdict · CDN TTL · Debug Report</p>
+    <h1>🔍 Site Structure Analyzer <span class="ver">v6.0.0</span></h1>
+    <p class="desc">Unified S1-S28 strategies · Priority ordering · Mirror detection · Full JSON output</p>
 
     <div class="worker-block">
         <div class="worker-block-header">
@@ -64,7 +64,6 @@
         <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Анализ каталога</button>
         <button class="btn-redirect" onclick="runRedirectAnalysis()" title="Анализ CDN redirect URL">🔄</button>
         <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
-        <button id="btnCopyConfig" onclick="copyParserConfig()" disabled>⚙️ Config</button>
         <button id="btnCopyWhitelist" onclick="copyWhitelist()" disabled>📡 Whitelist</button>
     </div>
 
@@ -79,14 +78,10 @@
     <div id="results" class="results" style="display:none">
         <h2>📊 Результаты</h2>
         <div class="tabs">
-            <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
-            <button class="tab" onclick="showTab('config')">⚙️ Config</button>
-            <button class="tab" onclick="showTab('formatted')">JSON</button>
+            <button class="tab active" onclick="showTab('formatted')">JSON</button>
             <button class="tab" onclick="showTab('raw')">Raw</button>
         </div>
-        <div id="tab-arch" class="tab-content active"><div id="archReport"></div></div>
-        <div id="tab-config" class="tab-content"><pre id="configFormatted"></pre></div>
-        <div id="tab-formatted" class="tab-content"><pre id="jsonFormatted"></pre></div>
+        <div id="tab-formatted" class="tab-content active"><pre id="jsonFormatted"></pre></div>
         <div id="tab-raw" class="tab-content"><textarea id="jsonRaw" readonly></textarea></div>
     </div>
 </div>
