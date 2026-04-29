@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v4.2.1</title>
+    <title>Site Structure Analyzer v5.0.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="ver">v4.2.1</span></h1>
-    <p class="desc">Redirect chain detection · KVS engine · /resolve support · license_code · sampleCards</p>
+    <h1>🔍 Site Structure Analyzer <span class="ver">v5.0.0</span></h1>
+    <p class="desc">S-strategies · Extended detection · NAME generator · Worker verdict · CDN TTL · Debug Report</p>
 
     <div class="worker-block">
         <div class="worker-block-header">
@@ -62,7 +62,7 @@
 
     <div class="buttons">
         <button id="btnAnalyze" onclick="runFullAnalysis()">🚀 Анализ каталога</button>
-	<button onclick="runRedirectAnalysis()" title="Анализ CDN redirect URL">🔄</button>
+        <button class="btn-redirect" onclick="runRedirectAnalysis()" title="Анализ CDN redirect URL">🔄</button>
         <button id="btnCopyJson" onclick="copyResults()" disabled>📋 JSON</button>
         <button id="btnCopyConfig" onclick="copyParserConfig()" disabled>⚙️ Config</button>
         <button id="btnCopyWhitelist" onclick="copyWhitelist()" disabled>📡 Whitelist</button>
