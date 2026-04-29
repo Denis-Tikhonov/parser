@@ -1,6 +1,7 @@
 // ================================================================
-// SITE STRUCTURE ANALYZER v4.2.2
-// Redirect chain · KVS engine · /resolve · license_code · kt_player
+// SITE STRUCTURE ANALYZER v5.0.0
+// S-strategies mapping · Extended detection · NAME generator
+// buildUrl patterns · CDN TTL · Worker verdict · Debug Report
 // ================================================================
 const DEFAULT_WORKER_URL="https://zonaproxy.777b737.workers.dev";
 let analysisResult=null,catalogData=null,videoPageData=null,transportLog=[];
@@ -17,6 +18,15 @@ const getTestWord=()=>($('testWord')?.value.trim()||'wife');
 const isVideoMode=()=>$('videoModeCheck')?.checked||false;
 const UA={desktop:'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120',mobile:'Mozilla/5.0 (Linux; Android 13) Mobile Chrome/120',bot:'Googlebot/2.1'};
 function getUA(){const s=$('uaSelect');return s?UA[s.value]||UA.desktop:UA.desktop}
+
+// ================================================================
+// NAME GENERATOR (matches UNIVERSAL_TEMPLATE v1.4.0 rule)
+// ================================================================
+function generateNameFromHost(host) {
+    const domain = host.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')
+        .replace(/\.(com|xxx|net|win|me|club|top|ru|org|info|adult|porn|sex|tube|online|site)\s*$/i, '');
+    return domain.length <= 5 ? domain : domain[0] + domain.substring(1, 5);
+}
 
 function updMerge(){const el=$('mergeIndicator');if(!el)return;if(catalogData&&videoPageData){el.textContent='📦 Каталог + 🎬 Видео → полный Config';el.className='merge-indicator has-both';el.style.display='block'}else if(catalogData){el.textContent='📦 Каталог ✓ → для видео включите 🎬';el.className='merge-indicator has-catalog';el.style.display='block'}else el.style.display='none'}
 
@@ -59,9 +69,218 @@ async function resolveRedirectChain(url, maxHops) {
         throw new Error('Resolve HTTP ' + r.status);
     } catch (e) {
         logT('Resolve fallback: ' + e.message, 'warning');
-        // Fallback: regular worker fetch — just note we can't resolve
         return { error: e.message, chain: [url], final: url, redirects: 0, fallback: true };
     }
+}
+
+// ================================================================
+// DEBUG REPORT — 14 patterns matching UNIVERSAL_TEMPLATE
+// ================================================================
+function buildDebugReport(html) {
+    const patterns = [
+        { name: 'source_tag', re: /<source/gi },
+        { name: 'og_video', re: /og:video/gi },
+        { name: 'mp4', re: /\.mp4/gi },
+        { name: 'm3u8', re: /\.m3u8/gi },
+        { name: 'video_url', re: /video_url/gi },
+        { name: 'flowplayer', re: /flowplayer/gi },
+        { name: 'html5player', re: /html5player/gi },
+        { name: 'dataEncodings', re: /dataEncod/gi },
+        { name: 'get_file', re: /get_file/gi },
+        { name: 'kt_player', re: /kt_player/gi },
+        { name: 'function_0', re: /function\/0/gi },
+        { name: 'Plyr', re: /Plyr\.js|new\s+Plyr/gi },
+        { name: 'Flashvars', re: /flashvars/gi },
+        { name: 'JSON_LD', re: /application\/ld\+json/gi }
+    ];
+    const result = {};
+    for (const p of patterns) {
+        const matches = html.match(p.re);
+        result[p.name] = matches ? matches.length : 0;
+    }
+    return result;
+}
+
+// ================================================================
+// S-STRATEGY DETECTION — maps to UNIVERSAL_TEMPLATE S1-S28
+// ================================================================
+function detectSStrategies(html, allJS) {
+    const cb = html + '\n' + allJS;
+    const lcb = cb.toLowerCase();
+    const strategies = [];
+
+    // Block 1: Simple (S1-S7)
+    if (/video_url\s*[:=]\s*['"]|video_alt_url\s*[:=]\s*['"]|setVideoUrlHigh|file\s*:\s*['"][^'"]+\.mp4/.test(cb))
+        strategies.push({ s: 1, name: 'VIDEO_RULES', block: 1 });
+    if (/https?:\/\/[^\s"']+\.mp4/.test(cb))
+        strategies.push({ s: 2, name: 'direct_mp4', block: 1 });
+    if (/og:video/.test(cb))
+        strategies.push({ s: 3, name: 'og_video', block: 1 });
+    if (/\.m3u8/.test(cb))
+        strategies.push({ s: 4, name: 'HLS_m3u8', block: 1 });
+    if (/\/get_file\/\d+\//.test(cb))
+        strategies.push({ s: 5, name: 'get_file', block: 1 });
+    if (/<source[^>]+src="[^"]+\.mp4"[^>]+size="/.test(cb) || /<source[^>]+size="[^"]+".+src="[^"]+\.mp4"/.test(cb))
+        strategies.push({ s: 6, name: 'source_size', block: 1 });
+    if (/<source[^>]+label="/.test(cb) || /<source[^>]+title="/.test(cb))
+        strategies.push({ s: 7, name: 'source_label', block: 1 });
+
+    // Block 2: Medium (S8-S17)
+    if (/<video\s[^>]*source[^>]*src/i.test(cb))
+        strategies.push({ s: 8, name: 'DOMParser_source', block: 2 });
+    if (/dataEncodings/.test(cb))
+        strategies.push({ s: 9, name: 'dataEncodings', block: 2 });
+    if (/html5player\.setVideoUrl/i.test(cb))
+        strategies.push({ s: 10, name: 'html5player', block: 2 });
+    if (/flowplayer/i.test(lcb))
+        strategies.push({ s: 11, name: 'flowplayer', block: 2 });
+    if (/video_url_\w+\s*[:=]/i.test(cb))
+        strategies.push({ s: 12, name: 'KVS_multi_url', block: 2 });
+    if (/data-(?:config|video|sources|player)=/i.test(cb))
+        strategies.push({ s: 13, name: 'data_config', block: 2 });
+    if (/data-setup=/i.test(cb) && /videojs|video-js/i.test(cb))
+        strategies.push({ s: 14, name: 'videojs', block: 2 });
+    if (/new\s+Plyr|Plyr\.setup|data-plyr/i.test(cb))
+        strategies.push({ s: 15, name: 'Plyr', block: 2 });
+    if (/jwplayer\s*\([^)]*\)\s*\.\s*setup/i.test(cb))
+        strategies.push({ s: 16, name: 'JW_Player_setup', block: 2 });
+    if (/flashvars\s*[:=]\s*\{/i.test(cb))
+        strategies.push({ s: 17, name: 'Flashvars', block: 2 });
+
+    // Block 3: Complex (S18-S25)
+    if (/application\/ld\+json/i.test(cb))
+        strategies.push({ s: 18, name: 'JSON_LD', block: 3 });
+    if (/\.mpd['"\s?]/i.test(cb))
+        strategies.push({ s: 19, name: 'DASH_mpd', block: 3 });
+    if (/cloudflarestream\.com/i.test(cb))
+        strategies.push({ s: 20, name: 'CF_Stream', block: 3 });
+    if (/window\.location\s*=\s*['"]/i.test(cb))
+        strategies.push({ s: 21, name: 'redirect', block: 3 });
+    if (/\.ts['"\s?]/i.test(cb) && !/\.tsu|\.tsx|\.tsl/i.test(cb))
+        strategies.push({ s: 22, name: 'ts_segments', block: 3 });
+    if (/postMessage\s*\(\s*['"]/i.test(cb))
+        strategies.push({ s: 23, name: 'PostMessage', block: 3 });
+    if (/(?:token|jwt|auth)\s*[:=]\s*['"][A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\./i.test(cb))
+        strategies.push({ s: 24, name: 'JWT_decode', block: 3 });
+    if (/var\s+\w+\s*=\s*\{[^}]*(?:src|file|url)\s*[:=]\s*['"][^'"]+\.(?:mp4|m3u8)/i.test(cb))
+        strategies.push({ s: 25, name: 'JS_object', block: 3 });
+
+    // Block 4: Heavy (S26-S28)
+    if (/MediaSource\s*\(/i.test(cb))
+        strategies.push({ s: 26, name: 'MediaSource', block: 4 });
+    if (/video\[data-src\]|data-lazy-src|data-video-src/i.test(cb))
+        strategies.push({ s: 27, name: 'Lazy_video', block: 4 });
+    if (/\/api\/[^'"]*video|endpoint.*video/i.test(cb))
+        strategies.push({ s: 28, name: 'API_endpoint', block: 4 });
+
+    const maxBlock = strategies.length ? Math.min(...strategies.map(s => s.block)) : 0;
+    return { matched: strategies, recommendedBlock: maxBlock, totalDetected: strategies.length };
+}
+
+// ================================================================
+// EXTENDED PLAYER DETECTION — Flowplayer, Plyr, JSON-LD, DASH, etc.
+// ================================================================
+function detectExtendedPlayers(html, allJS) {
+    const cb = html + '\n' + allJS;
+    const detected = [];
+
+    // Flowplayer
+    const fpPlaylist = cb.match(/playlist\s*:\s*\[(\{[\s\S]+?\})\]/i);
+    const fpClip = cb.match(/clip\s*:\s*\{[^}]*url\s*:\s*['"]([^'"]+)['"]/i);
+    const fpConf = cb.match(/flowplayer\s*\(\s*[^,]+,\s*(\{[\s\S]+?\})\s*\)/i);
+    if (fpPlaylist || fpClip || fpConf) {
+        detected.push({ name: 'flowplayer', type: fpPlaylist ? 'playlist' : fpClip ? 'clip' : 'config', strategy: 'S11' });
+    }
+
+    // Plyr
+    const plyrSetup = cb.match(/(?:new\s+Plyr|Plyr\.setup)\s*\(/i);
+    const plyrData = cb.match(/data-plyr-video-id/i);
+    if (plyrSetup || plyrData) {
+        detected.push({ name: 'plyr', type: plyrSetup ? 'setup' : 'data-attr', strategy: 'S15' });
+    }
+
+    // JSON-LD
+    const ldMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
+    if (ldMatch) {
+        try {
+            const ld = JSON.parse(ldMatch[1]);
+            const hasVideo = !!(ld.video?.contentUrl || (ld.url && /\.mp4|\.m3u8/.test(ld.url)));
+            detected.push({ name: 'json-ld', type: 'schema.org', hasVideoUrl: hasVideo, strategy: 'S18' });
+        } catch { detected.push({ name: 'json-ld', type: 'parse-error', strategy: 'S18' }); }
+    }
+
+    // DASH
+    const dashM = cb.match(/['"]?(https?:\/\/[^\s"']+\.mpd[^\s"']*?)['"]?/i);
+    if (dashM) detected.push({ name: 'dash', type: 'mpd', url: dashM[1], strategy: 'S19' });
+
+    // Cloudflare Stream
+    if (/cloudflarestream\.com/i.test(cb))
+        detected.push({ name: 'cloudflare-stream', strategy: 'S20' });
+
+    // Flashvars
+    const fvM = cb.match(/flashvars\s*[:=]\s*\{([^}]+)\}/i);
+    if (fvM) {
+        const hasUrl = /(?:video_url|file|src)\s*[:=]\s*['"]([^'"]+)['"]/i.test(fvM[1]);
+        detected.push({ name: 'flashvars', hasVideoUrl: hasUrl, strategy: 'S17' });
+    }
+
+    // MediaSource (warning — requires headless)
+    if (/MediaSource\s*\(/i.test(cb))
+        detected.push({ name: 'mediasource', type: 'warning', note: 'Requires headless browser', strategy: 'S26' });
+
+    // Lazy video
+    if (/video\[data-src\]|<video[^>]+data-(?:src|lazy-src|video-src)/i.test(cb))
+        detected.push({ name: 'lazy-video', strategy: 'S27' });
+
+    // PostMessage
+    if (/postMessage\s*\(\s*['"]https?:/i.test(cb))
+        detected.push({ name: 'postmessage', strategy: 'S23' });
+
+    return detected;
+}
+
+// ================================================================
+// WORKER NECESSITY VERDICT
+// ================================================================
+function assessWorkerNecessity(prot, player, redirectChain, kvsEngine) {
+    const reasons = [];
+    let required = false;
+
+    if (prot?.cloudflare) { reasons.push({ reason: 'Cloudflare bypass', type: prot.cloudflareTurnstile ? 'critical' : 'cors' }); required = true; }
+    if (prot?.ddosGuard) { reasons.push({ reason: 'DDoS-Guard bypass', type: 'cors' }); required = true; }
+    if (prot?.ageGate?.type === 'cookie-flag' || prot?.ageGate?.type === 'post-form') { reasons.push({ reason: 'Age gate cookies', type: 'cookies' }); required = true; }
+    if (prot?.refererProtected) { reasons.push({ reason: 'Referer header required', type: 'headers' }); required = true; }
+    if (redirectChain?.requiresFollow) { reasons.push({ reason: 'Follow 302 redirects', type: 'redirect' }); required = true; }
+    if (kvsEngine?.isKvs) { reasons.push({ reason: 'KVS session-bound URLs', type: 'resolve-page' }); required = true; }
+    if (prot?.drm) { reasons.push({ reason: 'DRM protected', type: 'impossible' }); }
+
+    // Determine mode
+    let mode = 'none';
+    if (reasons.some(r => r.type === 'impossible')) mode = 'impossible';
+    else if (reasons.some(r => r.type === 'resolve-page')) mode = 'resolve-page';
+    else if (reasons.some(r => r.type === 'redirect')) mode = 'follow-redirect';
+    else if (reasons.some(r => r.type === 'critical')) mode = 'headless';
+    else if (required) mode = 'cors-proxy';
+
+    return { required, mode, reasons, summary: required ? `Worker needed: ${mode}` : 'Direct fetch possible' };
+}
+
+// ================================================================
+// cleanUrl RULES DETECTION
+// ================================================================
+function detectCleanUrlRules(html, allJS) {
+    const cb = html + '\n' + allJS;
+    const rules = [];
+    if (cb.includes('\\/')) rules.push('unescape-backslash');
+    if (/src=["']\/\/[^"']+/.test(cb)) rules.push('add-protocol');
+    if (/src=["']\/[^/"']/.test(cb)) rules.push('prepend-host');
+    if (cb.includes('/THUMBNUM/')) rules.push('replace-THUMBNUM');
+    if (/\/function\/\d+\//.test(cb)) rules.push('strip-function-prefix');
+    // Base64 detection
+    if (/['"][A-Za-z0-9+/]{30,}={0,2}['"]/.test(cb) && /atob|base64|decode/i.test(cb)) rules.push('base64-decode');
+    // cleanMp4Url params
+    if (/[?&]rnd=\d+/.test(cb) || /[?&]br=\d+/.test(cb) || /[?&]_=\d+/.test(cb)) rules.push('strip-cache-params');
+    return rules;
 }
 
 // ================================================================
@@ -81,7 +300,8 @@ function aFW(doc, html) {
     const f = [], src = html + Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n');
     [['React', ['data-reactroot', 'ReactDOM']], ['Next.js', ['__NEXT_DATA__']], ['Vue.js', ['__vue__', 'data-v-']],
      ['jQuery', ['jquery', 'jQuery']], ['Cloudflare', ['challenges.cloudflare.com']], ['DDoS-Guard', ['ddos-guard']],
-     ['JW Player', ['jwplayer']], ['Video.js', ['videojs']], ['HLS.js', ['hls.js', 'Hls.']]
+     ['JW Player', ['jwplayer']], ['Video.js', ['videojs']], ['HLS.js', ['hls.js', 'Hls.']],
+     ['Flowplayer', ['flowplayer']], ['Plyr', ['new Plyr', 'Plyr.setup']]
     ].forEach(([n, ps]) => { for (const p of ps) if (src.includes(p)) { f.push(n); break } });
     return uniq(f);
 }
@@ -115,7 +335,6 @@ function aProt(doc, html, base) {
     while ((cm = cp.exec(src))) r.cookies.push(cm[1]);
     r.cookies = uniq(r.cookies).slice(0, 10);
 
-    // Age gate
     const ageCN = ['age_verified', 'disclaimer', 'over18', 'agegate', 'is_adult', 'mature', 'age_confirm'];
     let ageType = null, ageDet = {};
     for (const form of doc.querySelectorAll('form')) {
@@ -143,26 +362,32 @@ function aProt(doc, html, base) {
 }
 
 // ================================================================
-// CARD DETECTION v2
+// CARD DETECTION v3 — ranked selectors matching template order
 // ================================================================
+const RANKED_CARD_SELECTORS = [
+    '.video-block', '.video-item', 'div.thumb_main', '.thumb',
+    '.thumb-item', '.item', 'article.video', '.video-thumb', '.video',
+    '.video-card', '.video_block', '.clip', '.gallery-item', 'article.post',
+    '.card', '[data-video-id]', '[data-id]',
+    '.mozaique .thumb-block', '.list-videos .video-item', 'div.thumb'
+];
+
 function aCards(doc, base) {
     const r = { found: false, cardSelector: null, cardXPath: null, totalCardsFound: 0,
         cardSelectors: { container: null, link: null, title: null, thumbnail: null, thumbnailAttr: null, duration: null },
-        sampleCards: [] };
+        sampleCards: [], rankedSelectors: [] };
 
-    const KNOWN = ['.video-item', '.video-card', '.video-block', '.video_block', '.video-thumb',
-        '.thumb-item', '.thumb_main', '.thumb', '.item', '.video', '.clip',
-        '.gallery-item', 'article.post', '.card', '[data-video-id]', '[data-id]',
-        '.mozaique .thumb-block', '.list-videos .video-item', 'div.thumb'];
     let cards = [], uS = '';
-    for (const s of KNOWN) try {
-        const f = doc.querySelectorAll(s);
-        if (f.length >= 2) {
-            const hasLink = Array.from(f).some(e => e.querySelector('a[href]'));
-            const hasImg = Array.from(f).some(e => e.querySelector('img'));
-            if (hasLink && hasImg) { cards = Array.from(f); uS = s; break }
-        }
-    } catch {}
+    for (const s of RANKED_CARD_SELECTORS) {
+        try {
+            const f = doc.querySelectorAll(s);
+            const count = f.length;
+            const hasLink = count >= 2 && Array.from(f).some(e => e.querySelector('a[href]'));
+            const hasImg = count >= 2 && Array.from(f).some(e => e.querySelector('img'));
+            if (count >= 2) r.rankedSelectors.push({ selector: s, count, hasLink, hasImg, usable: hasLink && hasImg });
+            if (!cards.length && hasLink && hasImg) { cards = Array.from(f); uS = s; }
+        } catch {}
+    }
 
     if (!cards.length) {
         const videoLinkPats = ['/video/', '/videos/', '/watch/', '/view/', '/embed/', '/v/'];
@@ -279,6 +504,51 @@ function detectSearchPattern(doc, html, base) {
     return r;
 }
 
+// ================================================================
+// buildUrl PATTERN DETECTION
+// ================================================================
+function detectBuildUrlPatterns(doc, html, base, searchPattern, navigation) {
+    const patterns = {};
+
+    // Search
+    patterns.search = searchPattern?.pattern || base + '/?q={query}';
+
+    // Category
+    const catLink = doc.querySelector('a[href*="/category/"],a[href*="/categories/"],a[href*="?c="]');
+    if (catLink) {
+        const h = catLink.getAttribute('href') || '';
+        if (h.includes('?c=')) patterns.category = base + '/?c={slug}';
+        else if (h.includes('/categories/')) patterns.category = base + '/categories/{slug}';
+        else patterns.category = base + '/category/{slug}';
+    } else patterns.category = base + '/?c={slug}';
+
+    // Channel
+    if (navigation?.channels?.urlPattern) {
+        patterns.channel = base + navigation.channels.urlPattern;
+    }
+
+    // Pagination
+    const pgPatterns = [
+        { re: /[?&]page=\d+/, tpl: '?page={N}' },
+        { re: /\/page\/\d+/, tpl: '/page/{N}' },
+        { re: /\/\d+\.html/, tpl: '/{N}.html' },
+        { re: /[?&]from=\d+/, tpl: '?from={N}' }
+    ];
+    const allContent = html + Array.from(doc.querySelectorAll('a[href]')).map(a => a.getAttribute('href')).join(' ');
+    for (const pg of pgPatterns) {
+        if (pg.re.test(allContent)) { patterns.pagination = pg.tpl; break; }
+    }
+    if (!patterns.pagination) patterns.pagination = '?page={N}';
+
+    // Sorting
+    const sortLinks = allContent.match(/[?&]sort=([a-z0-9_-]+)/gi);
+    if (sortLinks) {
+        patterns.sorting = base + '/?sort={value}';
+    }
+
+    return patterns;
+}
+
 function parseJsNav(doc, html, base) {
     const all = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n'), cb = all + '\n' + html;
     const r = { categories: { fromJs: [], fromHtml: [], merged: [] }, channels: { fromJs: [], fromHtml: [], merged: [], urlPattern: null }, sorting: { fromJs: [] }, urlScheme: {} };
@@ -334,12 +604,10 @@ function extractLicenseCode(html, allJS) {
 }
 
 function analyzeKtDecodeFunction(ktCode) {
-    const r = { found: false, chunkSize: null, modulo: null, direction: null, tailHandling: null, rawSnippet: null, decodeFunctionName: null, algorithm: null, functionMarker: null };
+    const r = { found: false, chunkSize: null, modulo: null, direction: null, tailHandling: null, rawSnippet: null, algorithm: null, functionMarker: null };
     if (!ktCode || ktCode.length < 100) return r;
-
     const fm = ktCode.match(/\/function\/(\d)\//);
     if (fm) r.functionMarker = parseInt(fm[1]);
-
     const candidates = [];
     const fnRe = /function\s*\w*\s*\([^)]{1,40}\)\s*\{/g;
     let m;
@@ -351,16 +619,12 @@ function analyzeKtDecodeFunction(ktCode) {
         }
         if (end === -1) continue;
         const body = ktCode.substring(start, end + 1);
-        const hasCC = /charCodeAt|fromCharCode/.test(body);
-        const hasSub = /\.substr\s*\(/.test(body);
-        const hasMod = /%\s*\d+|%\s*\w+\.length/.test(body);
-        if (hasCC && hasSub && hasMod && body.length < 4000) candidates.push(body);
+        if (/charCodeAt|fromCharCode/.test(body) && /\.substr\s*\(/.test(body) && /%\s*\d+|%\s*\w+\.length/.test(body) && body.length < 4000) candidates.push(body);
     }
     if (!candidates.length) return r;
     candidates.sort((a, b) => a.length - b.length);
     const block = candidates[0];
-    r.found = true;
-    r.rawSnippet = block.substring(0, 600);
+    r.found = true; r.rawSnippet = block.substring(0, 600);
     const chunks = [...block.matchAll(/\.substr\s*\(\s*[^,]+,\s*(\d)\s*\)/g)];
     r.chunkSize = chunks.length ? parseInt(chunks[chunks.length - 1][1]) : 1;
     const modM = block.match(/%\s*(\d+)/);
@@ -373,43 +637,61 @@ function analyzeKtDecodeFunction(ktCode) {
 
 function buildKtDecodeSnippet(analysis, licenseCode) {
     if (!analysis.found && !licenseCode) return null;
-    const chunk = analysis?.chunkSize || 1;
-    const mod = analysis?.modulo || 9;
-    const dir = analysis?.direction || 'forward';
-
-    let code = `// kt_player decode — auto-generated\n`;
-    code += `// chunkSize=${chunk}, modulo=${mod}, direction=${dir}\n\n`;
-    code += `function decodeVideoUrl(encodedUrl, licenseCode) {\n`;
-    code += `  licenseCode = licenseCode || ${JSON.stringify(licenseCode || '')};\n\n`;
-    code += `  // Remove /function/N/ prefix\n`;
-    code += `  var funcMatch = encodedUrl.match(/\\/function\\/(\\d)\\/(.*)/);  \n`;
-    code += `  var encoded = funcMatch ? funcMatch[2] : encodedUrl;\n`;
-    code += `  var funcType = funcMatch ? parseInt(funcMatch[1]) : 0;\n\n`;
-    code += `  // Build shift codes from license\n`;
-    code += `  var codes = [];\n`;
-    code += `  for (var i = 0; i < licenseCode.length; i += ${chunk}) {\n`;
-    code += `    var n = parseInt(licenseCode.substr(i, ${chunk}));\n`;
-    code += `    if (!isNaN(n)) codes.push(n % ${mod});\n`;
-    code += `  }\n\n`;
-
+    const chunk = analysis?.chunkSize || 1, mod = analysis?.modulo || 9, dir = analysis?.direction || 'forward';
+    let code = `// kt_player decode — auto-generated\n// chunkSize=${chunk}, modulo=${mod}, direction=${dir}\n\n`;
+    code += `function decodeVideoUrl(encodedUrl, licenseCode) {\n  licenseCode = licenseCode || ${JSON.stringify(licenseCode || '')};\n`;
+    code += `  var funcMatch = encodedUrl.match(/\\/function\\/(\\d)\\/(.*)/);  \n  var encoded = funcMatch ? funcMatch[2] : encodedUrl;\n`;
+    code += `  var codes = [];\n  for (var i = 0; i < licenseCode.length; i += ${chunk}) {\n    var n = parseInt(licenseCode.substr(i, ${chunk}));\n    if (!isNaN(n)) codes.push(n % ${mod});\n  }\n`;
     if (dir === 'reverse') {
-        code += `  // Reverse decode\n`;
-        code += `  var decoded = '', ci = codes.length - 1;\n`;
-        code += `  for (var j = encoded.length - 1; j >= 0; j--) {\n`;
-        code += `    decoded = String.fromCharCode(encoded.charCodeAt(j) - codes[ci]) + decoded;\n`;
-        code += `    ci--; if (ci < 0) ci = codes.length - 1;\n`;
-        code += `  }\n`;
+        code += `  var decoded = '', ci = codes.length - 1;\n  for (var j = encoded.length - 1; j >= 0; j--) {\n    decoded = String.fromCharCode(encoded.charCodeAt(j) - codes[ci]) + decoded;\n    ci--; if (ci < 0) ci = codes.length - 1;\n  }\n`;
     } else {
-        code += `  // Forward decode\n`;
-        code += `  var decoded = '';\n`;
-        code += `  for (var j = 0; j < encoded.length; j++) {\n`;
-        code += `    decoded += String.fromCharCode(encoded.charCodeAt(j) - codes[j % codes.length]);\n`;
-        code += `  }\n`;
+        code += `  var decoded = '';\n  for (var j = 0; j < encoded.length; j++) {\n    decoded += String.fromCharCode(encoded.charCodeAt(j) - codes[j % codes.length]);\n  }\n`;
     }
-
-    code += `  return decoded;\n`;
-    code += `}\n`;
+    code += `  return decoded;\n}\n`;
     return code;
+}
+
+// ================================================================
+// KT_PLAYER INLINE DECODE
+// ================================================================
+function tryKtDecode(url, licenseCode) {
+    if (!url || !licenseCode) return null;
+    const funcMatch = url.match(/\/function\/(\d)\/(.*)/);
+    if (!funcMatch) return null;
+    const funcType = parseInt(funcMatch[1]), encoded = funcMatch[2];
+    if (!encoded || encoded.length < 10) return null;
+    if (encoded.startsWith('http') && (encoded.includes('/get_file/') || encoded.includes('.mp4') || encoded.includes('.m3u8'))) return encoded;
+    try {
+        if (funcType === 0) return ktDecodeMethod0(encoded, licenseCode);
+        if (funcType === 1) return ktDecodeMethod1(encoded, licenseCode);
+    } catch { return null; }
+    return null;
+}
+
+function ktDecodeMethod0(encoded, licenseCode) {
+    const codes = [];
+    for (let i = 0; i < licenseCode.length; i++) { const num = parseInt(licenseCode[i]); if (!isNaN(num)) codes.push(num % 9); }
+    if (!codes.length) return null;
+    let decoded = '';
+    for (let i = 0; i < encoded.length; i++) decoded += String.fromCharCode(encoded.charCodeAt(i) - codes[i % codes.length]);
+    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4') || decoded.includes('.m3u8'))) return decoded;
+    const codes2 = [];
+    for (let i = 0; i + 1 < licenseCode.length; i += 2) { const num = parseInt(licenseCode.substr(i, 2)); if (!isNaN(num)) codes2.push(num % 9); }
+    if (!codes2.length) return null;
+    let decoded2 = '';
+    for (let i = 0; i < encoded.length; i++) decoded2 += String.fromCharCode(encoded.charCodeAt(i) - codes2[i % codes2.length]);
+    if (decoded2.startsWith('http') && (decoded2.includes('/get_file/') || decoded2.includes('.mp4'))) return decoded2;
+    return null;
+}
+
+function ktDecodeMethod1(encoded, licenseCode) {
+    const codes = [];
+    for (let i = 0; i < licenseCode.length; i++) { const num = parseInt(licenseCode[i]); if (!isNaN(num)) codes.push(num % 9); }
+    if (!codes.length) return null;
+    let decoded = '', ci = codes.length - 1;
+    for (let i = encoded.length - 1; i >= 0; i--) { decoded = String.fromCharCode(encoded.charCodeAt(i) - codes[ci]) + decoded; ci--; if (ci < 0) ci = codes.length - 1; }
+    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4'))) return decoded;
+    return null;
 }
 
 // ================================================================
@@ -430,9 +712,8 @@ function detectRedirectPattern(videoUrls, siteHost) {
         }
         try {
             const videoHost = new URL(u, 'https://' + siteHost).hostname;
-            if (videoHost !== siteHost && !/cdn|stream|media|edge|video/i.test(videoHost)) {
-                result.patterns.push({ type: 'different_host', url: u, videoHost: videoHost, description: 'Video URL on different host' });
-            }
+            if (videoHost !== siteHost && !/cdn|stream|media|edge|video/i.test(videoHost))
+                result.patterns.push({ type: 'different_host', url: u, videoHost, description: 'Video URL on different host' });
         } catch {}
     }
     result.requiresFollow = result.getFilePattern || result.patterns.some(p => p.type === 'signed_redirect');
@@ -450,117 +731,19 @@ function detectKvsEngine(html, allJS) {
         ktPlayer: /kt_player/i.test(allJS)
     };
     const score = Object.values(markers).filter(Boolean).length;
-    return {
-        isKvs: score >= 2,
-        confidence: Math.min(score / 5, 1),
-        markers,
-        note: score >= 3 ? 'KVS (Kernel Video Sharing) engine — /get_file/ redirect chain' : score >= 2 ? 'Likely KVS-based' : 'Not KVS'
-    };
+    return { isKvs: score >= 2, confidence: Math.min(score / 5, 1), markers,
+        note: score >= 3 ? 'KVS (Kernel Video Sharing) engine — /get_file/ redirect chain' : score >= 2 ? 'Likely KVS-based' : 'Not KVS' };
 }
 
 // ================================================================
 // PLAYER STRUCTURE + QUALITY MAP
 // ================================================================
-const PLAYER_SIGS = [{ name: 'uppod', pats: ['uppod'] }, { name: 'jwplayer', pats: ['jwplayer'] }, { name: 'videojs', pats: ['videojs', 'video-js'] }, { name: 'flowplayer', pats: ['flowplayer'] }, { name: 'plyr', pats: ['plyr'] }];
+const PLAYER_SIGS = [{ name: 'uppod', pats: ['uppod'] }, { name: 'jwplayer', pats: ['jwplayer'] }, { name: 'videojs', pats: ['videojs', 'video-js'] }, { name: 'flowplayer', pats: ['flowplayer'] }, { name: 'plyr', pats: ['new Plyr', 'Plyr.setup'] }];
 const JS_CFG = [
     { type: 'kt_player', fields: [{ re: /video_url\s*[:=]\s*['"]([^'"]+)['"]/, labelRe: /video_url_text\s*[:=]\s*['"]([^'"]+)['"]/, fb: '480p' }, { re: /video_alt_url\s*[:=]\s*['"]([^'"]+)['"]/, labelRe: /video_alt_url_text\s*[:=]\s*['"]([^'"]+)['"]/, fb: '720p' }] },
     { type: 'xvideos', fields: [{ re: /setVideoUrlHigh\s*\(\s*['"]([^'"]+)['"]\)/, fb: '720p' }, { re: /setVideoUrlLow\s*\(\s*['"]([^'"]+)['"]\)/, fb: '480p' }, { re: /setVideoHLS\s*\(\s*['"]([^'"]+)['"]\)/, fb: 'HLS' }] },
     { type: 'jwplayer', fields: [{ re: /file\s*:\s*['"]([^'"]+\.(?:mp4|m3u8)[^'"]*)['"]/, fb: 'auto' }] }
 ];
-
-// ================================================================
-// KT_PLAYER INLINE DECODE (attempt without downloading kt_player.js)
-// ================================================================
-function tryKtDecode(url, licenseCode) {
-    if (!url || !licenseCode) return null;
-
-    // Check if URL has /function/N/ marker
-    const funcMatch = url.match(/\/function\/(\d)\/(.*)/);
-    if (!funcMatch) return null;
-
-    const funcType = parseInt(funcMatch[1]);
-    const encoded = funcMatch[2];
-
-    if (!encoded || encoded.length < 10) return null;
-    // If what follows /function/N/ is already a valid URL — just extract it
-    if (encoded.startsWith('http') && (encoded.includes('/get_file/') || encoded.includes('.mp4') || encoded.includes	    ('.m3u8'))) {
-    return encoded;
-    }
-    try {
-        if (funcType === 0) {
-            // Method 0: charCode shift with license_code chunks
-            return ktDecodeMethod0(encoded, licenseCode);
-        } else if (funcType === 1) {
-            // Method 1: reverse + charCode shift
-            return ktDecodeMethod1(encoded, licenseCode);
-        }
-    } catch (e) {
-        // Decode failed — return null, will try after downloading kt_player.js
-        return null;
-    }
-    return null;
-}
-
-function ktDecodeMethod0(encoded, licenseCode) {
-    // Standard KVS decode: split license to digits, mod, shift chars
-    const codes = [];
-    for (let i = 0; i < licenseCode.length; i++) {
-        const ch = licenseCode[i];
-        const num = parseInt(ch);
-        if (!isNaN(num)) codes.push(num % 9);
-    }
-    if (!codes.length) return null;
-
-    let decoded = '';
-    for (let i = 0; i < encoded.length; i++) {
-        decoded += String.fromCharCode(encoded.charCodeAt(i) - codes[i % codes.length]);
-    }
-
-    // Validate — decoded should look like a URL
-    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4') || decoded.includes('.m3u8'))) {
-        return decoded;
-    }
-
-    // Try alternative: 2-char chunks
-    const codes2 = [];
-    for (let i = 0; i + 1 < licenseCode.length; i += 2) {
-        const num = parseInt(licenseCode.substr(i, 2));
-        if (!isNaN(num)) codes2.push(num % 9);
-    }
-    if (!codes2.length) return null;
-
-    let decoded2 = '';
-    for (let i = 0; i < encoded.length; i++) {
-        decoded2 += String.fromCharCode(encoded.charCodeAt(i) - codes2[i % codes2.length]);
-    }
-    if (decoded2.startsWith('http') && (decoded2.includes('/get_file/') || decoded2.includes('.mp4') || decoded2.includes('.m3u8'))) {
-        return decoded2;
-    }
-
-    return null;
-}
-
-function ktDecodeMethod1(encoded, licenseCode) {
-    // Method 1: reverse iteration
-    const codes = [];
-    for (let i = 0; i < licenseCode.length; i++) {
-        const num = parseInt(licenseCode[i]);
-        if (!isNaN(num)) codes.push(num % 9);
-    }
-    if (!codes.length) return null;
-
-    let decoded = '';
-    let ci = codes.length - 1;
-    for (let i = encoded.length - 1; i >= 0; i--) {
-        decoded = String.fromCharCode(encoded.charCodeAt(i) - codes[ci]) + decoded;
-        ci--; if (ci < 0) ci = codes.length - 1;
-    }
-
-    if (decoded.startsWith('http') && (decoded.includes('/get_file/') || decoded.includes('.mp4'))) {
-        return decoded;
-    }
-    return null;
-}
 
 function analyzePlayer(doc, allJS, base) {
     const r = { videoTag: null, sources: [], jsConfigs: [], jsonEncodings: [], qualityMap: {}, videoUrlTemplates: [], player: null };
@@ -632,50 +815,35 @@ function analyzePlayer(doc, allJS, base) {
     }
     const seen = new Set(); r.videoUrlTemplates = r.videoUrlTemplates.filter(t => { if (seen.has(t.template)) return false; seen.add(t.template); return true });
 
-
-    // kt_player license_code decode — try to decode URLs before redirect detection
+    // kt_player license_code decode
     r.ktDecode = null;
     if (r.jsConfigs.some(c => c.type === 'kt_player')) {
-    const licenseCode = extractLicenseCode(allJS, allJS);
-    if (licenseCode) {
-        r.ktDecode = { licenseCode, analysis: null, decodeSnippet: null };
-
-        // Try inline decode if URL contains /function/
-        for (const [q, info] of Object.entries(r.qualityMap)) {
-            if (info.url && info.url.includes('/function/')) {
-                const decoded = tryKtDecode(info.url, licenseCode);
-                if (decoded) {
-                    info.urlEncoded = info.url;
-                    info.url = decoded;
-                    info.decoded = true;
-                    info.domain = hostOf(decoded);
+        const licenseCode = extractLicenseCode(allJS, allJS);
+        if (licenseCode) {
+            r.ktDecode = { licenseCode, analysis: null, decodeSnippet: null };
+            for (const [q, info] of Object.entries(r.qualityMap)) {
+                if (info.url && info.url.includes('/function/')) {
+                    const decoded = tryKtDecode(info.url, licenseCode);
+                    if (decoded) { info.urlEncoded = info.url; info.url = decoded; info.decoded = true; info.domain = hostOf(decoded); }
                 }
             }
-        }
-        // Also decode jsConfigs fields
-        for (const cfg of r.jsConfigs) {
-            if (cfg.type !== 'kt_player') continue;
-            for (const f of cfg.fields) {
-                if (f.url && f.url.includes('/function/')) {
-                    const decoded = tryKtDecode(f.url, licenseCode);
-                    if (decoded) {
-                        f.urlEncoded = f.url;
-                        f.url = decoded;
-                        f.decoded = true;
+            for (const cfg of r.jsConfigs) {
+                if (cfg.type !== 'kt_player') continue;
+                for (const f of cfg.fields) {
+                    if (f.url && f.url.includes('/function/')) {
+                        const decoded = tryKtDecode(f.url, licenseCode);
+                        if (decoded) { f.urlEncoded = f.url; f.url = decoded; f.decoded = true; }
                     }
                 }
             }
         }
     }
-}
 
-// Redirect chain detection from found video URLs (now using decoded URLs)
-const allVideoSrcs = [...r.sources.map(v => v.src), ...Object.values(r.qualityMap).map(v => v.url)].filter(Boolean);
-r.redirectChain = detectRedirectPattern(allVideoSrcs, hostOf(base));
-r.kvsEngine = detectKvsEngine(allJS, allJS);
-
+    const allVideoSrcs = [...r.sources.map(v => v.src), ...Object.values(r.qualityMap).map(v => v.url)].filter(Boolean);
+    r.redirectChain = detectRedirectPattern(allVideoSrcs, hostOf(base));
+    r.kvsEngine = detectKvsEngine(allJS, allJS);
     const lcJS = allJS.toLowerCase();
-    for (const p of PLAYER_SIGS) for (const pat of p.pats) if (lcJS.includes(pat)) { r.player = p.name; break }
+    for (const p of PLAYER_SIGS) for (const pat of p.pats) if (lcJS.includes(pat.toLowerCase())) { r.player = p.name; break }
     return r;
 }
 
@@ -701,17 +869,8 @@ function buildWhitelist(base, dom, player, cards) {
 }
 
 // ================================================================
-// URL FORMAT / PARSER FLOW
+// PARSER FLOW
 // ================================================================
-function detectUrlFormat(html) {
-    const r = { cleanUrlRules: [] };
-    if (html.includes('\\/')) r.cleanUrlRules.push('unescape-backslash');
-    if (/src=["']\/\/[^"']+/.test(html)) r.cleanUrlRules.push('add-protocol');
-    if (/src=["']\/[^/"']/.test(html)) r.cleanUrlRules.push('prepend-host');
-    if (html.includes('/THUMBNUM/')) r.cleanUrlRules.push('replace-THUMBNUM');
-    return r;
-}
-
 function buildParserFlow(base, cards, player, search, prot) {
     const flow = {
         catalog: { url: base, cardSelector: cards?.cardSelector, cardCount: cards?.totalCardsFound || 0, linkSelector: cards?.cardSelectors?.link },
@@ -746,14 +905,27 @@ function assessCompat(jsReq, prot, vc, player) {
 }
 
 // ================================================================
-// PARSER CONFIG
+// PARSER CONFIG — v5.0.0 with S-strategies, NAME, buildUrl, etc.
 // ================================================================
 function generateParserConfig(cat, vid) {
     const cfg = {}; const base = cat ? cat._meta?.baseUrl : vid ? baseOf(vid.url) : '';
     cfg.HOST = base;
-    cfg.NAME = base.replace(/https?:\/\/(www\.)?/, '').replace(/\..*/, '').replace(/[^a-z0-9]/gi, '').substring(0, 12) || 'myparser';
+    cfg.NAME = generateNameFromHost(base);
+    cfg.SITE_NAME = base.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*/, '');
     cfg.mainPagePath = cat?.mainPagePaths?.[0] || '/';
+
+    // Template integration helpers
+    cfg._templateIntegration = {
+        menuJson: `{ "title": "${cfg.SITE_NAME}", "playlist_url": "${cfg.NAME}" }`,
+        domainMap: `'${cfg.SITE_NAME}': '${cfg.NAME}'`,
+        workerWhitelist: `'${cfg.SITE_NAME}',`
+    };
+
     if (cat?.searchPattern) { cfg.SEARCH_PARAM = cat.searchPattern.paramName; cfg.searchPattern = cat.searchPattern.pattern; if (cat.searchPattern.formAction) cfg.searchFormAction = cat.searchPattern.formAction }
+
+    // buildUrl patterns
+    cfg.BUILD_URL = cat?.buildUrlPatterns || {};
+
     if (cat?.navigation) {
         const nav = cat.navigation;
         cfg.CATEGORIES = (nav.categories?.merged || []).map(c => ({ title: c.name, slug: c.slug }));
@@ -763,27 +935,40 @@ function generateParserConfig(cat, vid) {
         if (nav.urlScheme?.search) cfg.URL_PATTERNS.search = nav.urlScheme.search;
         if (nav.urlScheme?.category) cfg.URL_PATTERNS.category = nav.urlScheme.category;
         if (nav.urlScheme?.channel?.pattern) cfg.URL_PATTERNS.channel = nav.urlScheme.channel;
-        cfg.URL_PATTERNS.pagination = '&page={N}';
+        cfg.URL_PATTERNS.pagination = cat?.buildUrlPatterns?.pagination || '&page={N}';
     }
-    if (cat?.videoCards?.found) { cfg.CARD_SELECTORS = cat.videoCards.cardSelectors; cfg.linkPattern = cat.videoCards.linkPattern; cfg.sampleCards = cat.videoCards.sampleCards.slice(0, 3) }
+    if (cat?.videoCards?.found) {
+        cfg.CARD_SELECTORS = cat.videoCards.cardSelectors;
+        cfg.CARD_SELECTORS_RANKED = (cat.videoCards.rankedSelectors || []).filter(s => s.usable).slice(0, 5);
+        cfg.linkPattern = cat.videoCards.linkPattern;
+        cfg.sampleCards = cat.videoCards.sampleCards.slice(0, 3);
+    }
 
     if (vid?.playerStructure) {
         const ps = vid.playerStructure;
         cfg.QUALITY_MAP = {};
-	for (const [q, info] of Object.entries(ps.qualityMap || {})) {
-	    cfg.QUALITY_MAP[q] = { ...info };
-	    if (info.decoded) {
-	        cfg.QUALITY_MAP[q]._note = 'decoded from license_code';
-	        cfg.QUALITY_MAP[q].urlEncoded = info.urlEncoded;
-	    }
-	} 
-	cfg.VIDEO_URL_TEMPLATES = ps.videoUrlTemplates;
-        cfg.PLAYER = ps.player; cfg.VIDEO_RULES = ps.jsConfigs?.length ? ps.jsConfigs : [];
+        for (const [q, info] of Object.entries(ps.qualityMap || {})) {
+            cfg.QUALITY_MAP[q] = { ...info };
+            if (info.decoded) { cfg.QUALITY_MAP[q]._note = 'decoded from license_code'; cfg.QUALITY_MAP[q].urlEncoded = info.urlEncoded; }
+        }
+        cfg.VIDEO_URL_TEMPLATES = ps.videoUrlTemplates;
+        cfg.PLAYER = ps.player;
+
+        // VIDEO_RULES in template format
+        cfg.VIDEO_RULES = [];
+        if (ps.jsConfigs?.length) {
+            for (const jc of ps.jsConfigs) {
+                for (const f of jc.fields) {
+                    cfg.VIDEO_RULES.push({ label: f.quality, re: jc.regex, type: jc.type });
+                }
+            }
+        }
+
         cfg.JSON_ENCODINGS = ps.jsonEncodings?.length ? uniq(ps.jsonEncodings.map(e => e.variable)) : [];
 
         // Redirect info
         if (ps.redirectChain?.requiresFollow) {
-            cfg.REDIRECT = { mode: 'follow', maxRedirects: 5, patterns: ps.redirectChain.patterns.map(p => ({ type: p.type, workerMode: p.workerMode })), note: 'Worker must follow 302 redirects for video URLs' };
+            cfg.REDIRECT = { mode: 'follow', maxRedirects: 5, patterns: ps.redirectChain.patterns.map(p => ({ type: p.type, workerMode: p.workerMode })), note: 'Worker must follow 302 redirects' };
             if (ps.kvsEngine?.isKvs) { cfg.REDIRECT.engine = 'KVS'; cfg.REDIRECT.kvsConfidence = ps.kvsEngine.confidence }
         }
 
@@ -791,16 +976,31 @@ function generateParserConfig(cat, vid) {
         if (ps.ktDecode?.analysis?.found) {
             cfg.KT_DECODE = { licenseCode: ps.ktDecode.licenseCode, algorithm: ps.ktDecode.analysis.algorithm, chunkSize: ps.ktDecode.analysis.chunkSize, modulo: ps.ktDecode.analysis.modulo, direction: ps.ktDecode.analysis.direction, decodeSnippet: ps.ktDecode.decodeSnippet };
         }
+
+        // S-Strategies
+        if (vid.sStrategies) cfg.S_STRATEGIES = vid.sStrategies;
+        // Extended players
+        if (vid.extendedPlayers?.length) cfg.EXTENDED_PLAYERS = vid.extendedPlayers;
+        // Debug report
+        if (vid.debugReport) cfg.DEBUG_REPORT = vid.debugReport;
     } else { cfg.VIDEO_RULES = []; cfg._note = 'Для VIDEO_RULES → анализ видео-страницы (🎬)' }
 
-    // Resolved redirect URLs
+    // Resolved redirects
     if (vid?.redirectResolution?.length) {
         cfg.REDIRECT_RESOLVED = vid.redirectResolution.map(r => ({ original: r.original?.substring(0, 100), final: r.final?.substring(0, 100), hops: r.redirectCount, type: r.contentType, resumable: r.resumable }));
     }
 
-    if (vid?.urlFormat?.cleanUrlRules?.length) cfg.CLEAN_URL_RULES = vid.urlFormat.cleanUrlRules;
+    // cleanUrl rules
+    cfg.CLEAN_URL_RULES = vid?.cleanUrlRules || cat?.cleanUrlRules || [];
+
+    // Worker verdict
+    if (vid?.workerVerdict) cfg.WORKER_VERDICT = vid.workerVerdict;
+
+    // Headers
     if (cat?.protection?.requiredHeaders) cfg.REQUIRED_HEADERS = cat.protection.requiredHeaders;
     else if (vid?.protection?.requiredHeaders) cfg.REQUIRED_HEADERS = vid.protection.requiredHeaders;
+
+    // Age gate
     if (cat?.protection?.ageGate?.detected) { const ag = cat.protection.ageGate; cfg.AGE_GATE = { type: ag.type }; if (ag.cookieName) cfg.AGE_GATE.cookie = ag.cookieName + '=' + (ag.cookieValue || '1') }
     if (vid?.workerWhitelist) cfg.WORKER_WHITELIST = vid.workerWhitelist.required.map(d => d.domain);
     return cfg;
@@ -816,7 +1016,7 @@ async function runCatalogAnalysis() {
     const base = baseOf(url), btn = $('btnAnalyze');
     if (btn) { btn.disabled = true; btn.textContent = '⏳' }
     $('results').style.display = 'none'; updCI('hidden'); updW(!!getW()); transportLog = [];
-    const result = { _meta: { analyzedUrl: url, baseUrl: base, analyzedAt: new Date().toISOString(), mode: 'catalog', testWord: getTestWord(), tool: 'v4.2.1' } };
+    const result = { _meta: { analyzedUrl: url, baseUrl: base, analyzedAt: new Date().toISOString(), mode: 'catalog', testWord: getTestWord(), tool: 'v5.0.0' } };
 
     try {
         setStatus('📥', 'loading'); setProgress(10, '📡');
@@ -831,12 +1031,14 @@ async function runCatalogAnalysis() {
         setProgress(30, 'Prot'); const prot = aProt(doc, html, base); result.protection = prot; result.encoding = aEnc(doc);
         setProgress(40, 'Cards'); result.videoCards = aCards(doc, base);
         setProgress(50, 'Nav'); result.navigation = parseJsNav(doc, html, base);
+        setProgress(55, 'BuildUrl'); result.buildUrlPatterns = detectBuildUrlPatterns(doc, html, base, result.searchPattern, result.navigation);
         setProgress(60, 'Search'); result.searchPattern = detectSearchPattern(doc, html, base);
         setProgress(65, 'MainPage'); result.mainPagePaths = detectMainPagePath(doc, base, url);
+        setProgress(68, 'CleanUrl'); result.cleanUrlRules = detectCleanUrlRules(html, Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n'));
         setProgress(70, 'JSD');
-        const jsReq = (() => { const root = doc.querySelector('#app,#root,#__next'); if (root && root.children.length <= 3) return 'yes'; if (dom.totalElements < 80) return 'yes'; if (result.videoCards.found) return 'no'; if (fw.some(f => ['JW Player', 'Video.js', 'HLS.js'].includes(f))) return 'partial'; return 'no' })();
+        const jsReq = (() => { const root = doc.querySelector('#app,#root,#__next'); if (root && root.children.length <= 3) return 'yes'; if (dom.totalElements < 80) return 'yes'; if (result.videoCards.found) return 'no'; if (fw.some(f => ['JW Player', 'Video.js', 'HLS.js', 'Flowplayer', 'Plyr'].includes(f))) return 'partial'; return 'no' })();
         const sP = result.searchPattern.paramName || 'q', eTW = encodeURIComponent(getTestWord());
-        result.navigation.urlScheme = { base, search: { paramName: sP, pattern: result.searchPattern.pattern || base + '/?' + sP + '={query}', example: base + '/?' + sP + '=' + eTW }, category: { paramName: 'c', pattern: base + '/?c={slug}' }, channel: { pattern: result.navigation.channels.urlPattern ? base + result.navigation.channels.urlPattern : null }, sorting: { options: result.navigation.sorting.fromJs, pattern: base + '/?sort={value}' }, pagination: { pattern: '&page={N}' } };
+        result.navigation.urlScheme = { base, search: { paramName: sP, pattern: result.searchPattern.pattern || base + '/?' + sP + '={query}', example: base + '/?' + sP + '=' + eTW }, category: { paramName: 'c', pattern: result.buildUrlPatterns?.category || base + '/?c={slug}' }, channel: { pattern: result.navigation.channels.urlPattern ? base + result.navigation.channels.urlPattern : null }, sorting: { options: result.navigation.sorting.fromJs, pattern: result.buildUrlPatterns?.sorting || base + '/?sort={value}' }, pagination: { pattern: result.buildUrlPatterns?.pagination || '&page={N}' } };
         result.searchExamples = [{ label: 'Search: ' + getTestWord(), url: base + '/?' + sP + '=' + eTW }];
         result.navigation.sorting.fromJs.forEach(s => result.searchExamples.push({ label: 'Search+' + s.label, url: base + '/?' + s.param + '&' + sP + '=' + eTW }));
         result.architecture = { jsRequired: jsReq, frameworks: fw, recommendation: { method: jsReq === 'yes' ? 'Headless' : 'CSS+XPath', tools: jsReq === 'yes' ? 'Puppeteer' : 'Cheerio', transport: prot.cloudflare ? 'Worker' : 'Proxy/direct' } };
@@ -867,8 +1069,22 @@ async function runVideoAnalysis() {
         const h1 = doc.querySelector('h1'); if (h1) vd.videoTitle = h1.textContent.trim();
         const ogImg = doc.querySelector('meta[property="og:image"]'); if (ogImg) vd.poster = ogImg.getAttribute('content');
         const allInline = Array.from(doc.querySelectorAll('script')).map(s => s.textContent).join('\n');
+        const allContent = html + '\n' + allInline;
+
+        setProgress(30, '🎬 Debug...');
+        vd.debugReport = buildDebugReport(allContent);
+
         setProgress(35, '🎬 Player...');
-        vd.playerStructure = analyzePlayer(doc, html + '\n' + allInline, base);
+        vd.playerStructure = analyzePlayer(doc, allContent, base);
+
+        setProgress(40, '🎬 S-Strategies...');
+        vd.sStrategies = detectSStrategies(html, allInline);
+
+        setProgress(42, '🎬 Extended...');
+        vd.extendedPlayers = detectExtendedPlayers(html, allInline);
+
+        setProgress(44, '🎬 CleanUrl...');
+        vd.cleanUrlRules = detectCleanUrlRules(html, allInline);
 
         setProgress(50, '🎬 ExtJS...');
         const extSrcs = Array.from(doc.querySelectorAll('script[src]')).map(s => s.getAttribute('src')).filter(Boolean);
@@ -888,7 +1104,6 @@ async function runVideoAnalysis() {
                     vd.playerStructure.jsonEncodings.push(...extP.jsonEncodings);
                     vd.playerStructure.videoUrlTemplates.push(...extP.videoUrlTemplates);
                     if (extP.player && !vd.playerStructure.player) vd.playerStructure.player = extP.player;
-                    // Merge redirect chain
                     if (extP.redirectChain?.hasRedirect) {
                         vd.playerStructure.redirectChain.hasRedirect = true;
                         vd.playerStructure.redirectChain.patterns.push(...extP.redirectChain.patterns);
@@ -920,21 +1135,17 @@ async function runVideoAnalysis() {
                         vd.playerStructure.ktDecode.licenseCode = licenseCode;
                         vd.playerStructure.ktDecode.decodeSnippet = buildKtDecodeSnippet(analysis, licenseCode);
                     }
-                    logT('KT: ' + (analysis.found ? '✅ algorithm found' : '❌ not found'), analysis.found ? 'success' : 'fail');
+                    logT('KT: ' + (analysis.found ? '✅ found' : '❌ not found'), analysis.found ? 'success' : 'fail');
                 } catch (e) { logT('KT: ' + e.message, 'fail') }
             }
         }
 
         if (videoScripts[0]) vd.externalJsPattern = videoScripts[0].replace(/\d+/g, '\\d+').replace(/\./g, '\\.');
 
-        // Redirect chain resolution via Worker /resolve (fresh fetch for non-expired hash)
-        
-       // Redirect chain resolution + CDN domain discovery
+        // CDN resolution
         setProgress(62, '🎬 CDN...');
         if (vd.playerStructure?.redirectChain?.requiresFollow) {
             vd.redirectResolution = [];
-
-// Method 1: Extract CDN domains from page content (fast patterns)
             const cdnDomains = new Set();
             const pageContent = html + '\n' + allInline;
             const cdnSimple = [
@@ -944,24 +1155,12 @@ async function runVideoAnalysis() {
             ];
             for (const pat of cdnSimple) {
                 const m = pageContent.match(pat);
-                if (m) {
-                    try {
-                        const d = new URL(m[1]).hostname;
-                        if (d !== hostOf(base) && d !== hostOf(url)) cdnDomains.add(d);
-                    } catch {}
-                }
+                if (m) { try { const d = new URL(m[1]).hostname; if (d !== hostOf(base) && d !== hostOf(url)) cdnDomains.add(d); } catch {} }
             }
-            // Extract all hostnames that look like CDN
             const hostRe = /(https?:\/\/[a-z0-9.-]+\.(?:privatehost\.com|cdn[a-z0-9]*\.[a-z.]+))/gi;
             let hm;
-            while ((hm = hostRe.exec(pageContent)) !== null) {
-                try {
-                    const d = new URL(hm[1]).hostname;
-                    if (d !== hostOf(base)) cdnDomains.add(d);
-                } catch {}
-            }
+            while ((hm = hostRe.exec(pageContent)) !== null) { try { const d = new URL(hm[1]).hostname; if (d !== hostOf(base)) cdnDomains.add(d); } catch {} }
 
-            // Method 2: Worker /resolve-page (fetches page + follows redirects in one session)
             const w = getW();
             if (w) {
                 try {
@@ -972,35 +1171,18 @@ async function runVideoAnalysis() {
                     clearTimeout(t);
                     if (r.ok) {
                         const data = await r.json();
-                        logT('Resolve-page: ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 60),
-                            data.error ? 'fail' : 'success');
+                        logT('Resolve-page: ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 60), data.error ? 'fail' : 'success');
                         vd.redirectResolution.push({
-                            original: data.videoUrl || url,
-                            final: data.final,
-                            chain: data.chain,
-                            redirectCount: data.redirects || 0,
-                            contentType: data.contentType,
-                            contentLength: data.contentLength,
-                            resumable: data.resumable,
-                            pattern: 'kvs_get_file',
-                            error: data.error || null,
-                            allVideoUrls: data.allVideoUrls
+                            original: data.videoUrl || url, final: data.final, chain: data.chain,
+                            redirectCount: data.redirects || 0, contentType: data.contentType,
+                            contentLength: data.contentLength, resumable: data.resumable,
+                            pattern: 'kvs_get_file', error: data.error || null, allVideoUrls: data.allVideoUrls
                         });
-                    } else {
-                        logT('Resolve-page HTTP ' + r.status, 'fail');
-                    }
-                } catch (e) {
-                    logT('Resolve-page: ' + e.message, 'fail');
-                }
+                    } else logT('Resolve-page HTTP ' + r.status, 'fail');
+                } catch (e) { logT('Resolve-page: ' + e.message, 'fail'); }
             }
 
-            // Add discovered CDN domains from content
-            if (cdnDomains.size) {
-                logT('CDN from content: ' + [...cdnDomains].join(', '), 'success');
-                vd.cdnDomainsFromContent = [...cdnDomains];
-            }
-
-            // Known KVS CDN patterns
+            if (cdnDomains.size) { logT('CDN from content: ' + [...cdnDomains].join(', '), 'success'); vd.cdnDomainsFromContent = [...cdnDomains]; }
             const kvsKnownCdns = [];
             if (pageContent.includes('privatehost.com')) {
                 kvsKnownCdns.push('privatehost.com');
@@ -1011,44 +1193,23 @@ async function runVideoAnalysis() {
         }
 
         setProgress(70, '🎬 Format');
-        vd.urlFormat = detectUrlFormat(html + '\n' + allInline);
+        vd.urlFormat = { cleanUrlRules: vd.cleanUrlRules };
         const prot = aProt(doc, html, base); vd.protection = prot;
+
+        setProgress(75, '🎬 Worker verdict...');
+        vd.workerVerdict = assessWorkerNecessity(prot, vd.playerStructure, vd.playerStructure?.redirectChain, vd.playerStructure?.kvsEngine);
+
         setProgress(80, '🎬 Whitelist');
         const dom = aDom(doc);
         vd.workerWhitelist = buildWhitelist(base, dom, vd.playerStructure, catalogData?.videoCards);
 
-        // Add resolved redirect domains + CDN domains from content to whitelist
         if (vd.redirectResolution?.length || vd.cdnDomainsFromContent?.length || vd.kvsKnownCdns?.length) {
-            // From resolve chain
             for (const rr of (vd.redirectResolution || [])) {
-                if (rr.final) {
-                    const d = hostOf(rr.final);
-                    if (d && !vd.workerWhitelist.required.some(w => w.domain === d)) {
-                        vd.workerWhitelist.required.push({ domain: d, role: 'CDN (resolved)', required: true });
-                    }
-                }
-                if (rr.chain) {
-                    for (const cu of rr.chain) {
-                        const d = hostOf(cu);
-                        if (d && !vd.workerWhitelist.required.some(w => w.domain === d)) {
-                            vd.workerWhitelist.required.push({ domain: d, role: 'CDN (chain)', required: true });
-                        }
-                    }
-                }
+                if (rr.final) { const d = hostOf(rr.final); if (d && !vd.workerWhitelist.required.some(w => w.domain === d)) vd.workerWhitelist.required.push({ domain: d, role: 'CDN (resolved)', required: true }); }
+                if (rr.chain) { for (const cu of rr.chain) { const d = hostOf(cu); if (d && !vd.workerWhitelist.required.some(w => w.domain === d)) vd.workerWhitelist.required.push({ domain: d, role: 'CDN (chain)', required: true }); } }
             }
-            // From page content analysis
-            for (const d of (vd.cdnDomainsFromContent || [])) {
-                if (!vd.workerWhitelist.required.some(w => w.domain === d)) {
-                    vd.workerWhitelist.required.push({ domain: d, role: 'CDN (content)', required: true });
-                }
-            }
-            // Known KVS CDNs
-            for (const d of (vd.kvsKnownCdns || [])) {
-                if (!vd.workerWhitelist.required.some(w => w.domain === d)) {
-                    vd.workerWhitelist.required.push({ domain: d, role: 'KVS CDN', required: true });
-                }
- }
-            // Rebuild code
+            for (const d of (vd.cdnDomainsFromContent || [])) { if (!vd.workerWhitelist.required.some(w => w.domain === d)) vd.workerWhitelist.required.push({ domain: d, role: 'CDN (content)', required: true }); }
+            for (const d of (vd.kvsKnownCdns || [])) { if (!vd.workerWhitelist.required.some(w => w.domain === d)) vd.workerWhitelist.required.push({ domain: d, role: 'KVS CDN', required: true }); }
             vd.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + vd.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
         }
 
@@ -1070,165 +1231,86 @@ async function runVideoAnalysis() {
 // ================================================================
 async function runRedirectAnalysis() {
     const redirectUrl = prompt('Вставьте CDN URL (финальная ссылка после редиректа):', '');
-    if (!redirectUrl || !redirectUrl.startsWith('http')) {
-        setStatus('❌ Нужен URL начинающийся с http', 'error');
-        return;
-    }
-
+    if (!redirectUrl || !redirectUrl.startsWith('http')) { setStatus('❌ URL http...', 'error'); return; }
     const btn = $('btnAnalyze');
     if (btn) { btn.disabled = true; btn.textContent = '🔄⏳'; }
-    setStatus('🔄 Анализ redirect URL...', 'loading');
-    setProgress(10, '🔄 Redirect...', 'video-mode');
-    transportLog = [];
+    setStatus('🔄 Redirect...', 'loading'); setProgress(10, '🔄', 'video-mode'); transportLog = [];
 
     try {
         logT('Redirect URL: ' + redirectUrl);
         const w = getW();
-        if (!w) { setStatus('❌ Worker не настроен', 'error'); return; }
+        if (!w) { setStatus('❌ Worker', 'error'); return; }
 
-        // HEAD request via worker /resolve
         setProgress(30, '🔄 HEAD...');
         const resolveUrl = w + '/resolve?url=' + encodeURIComponent(redirectUrl) + '&max=8';
         const a = new AbortController, t = setTimeout(() => a.abort(), 20000);
         const r = await fetch(resolveUrl, { signal: a.signal });
         clearTimeout(t);
-
         let data = {};
-        if (r.ok) {
-            data = await r.json();
-            logT('Resolved: ' + (data.redirects || 0) + ' hops → ' + (data.final || '').substring(0, 80), 'success');
-        } else {
-            logT('Resolve HTTP ' + r.status, 'fail');
-            data = { error: 'HTTP ' + r.status, final: redirectUrl, redirects: 0, chain: [redirectUrl] };
-        }
+        if (r.ok) { data = await r.json(); logT('Resolved: ' + (data.redirects || 0) + ' hops', 'success'); }
+        else { logT('HTTP ' + r.status, 'fail'); data = { error: 'HTTP ' + r.status, final: redirectUrl, redirects: 0, chain: [redirectUrl] }; }
 
         setProgress(60, '🔄 Analyzing...');
-
-        // Parse URL structure
         let urlInfo = {};
-        try {
-            const u = new URL(data.final || redirectUrl);
-            urlInfo = {
-                hostname: u.hostname,
-                pathname: u.pathname,
-                params: Object.fromEntries(u.searchParams.entries()),
-                protocol: u.protocol,
-            };
-        } catch {}
+        try { const u = new URL(data.final || redirectUrl); urlInfo = { hostname: u.hostname, pathname: u.pathname, params: Object.fromEntries(u.searchParams.entries()) }; } catch {}
 
-        // Extract useful info from params
         const params = urlInfo.params || {};
         const cdnInfo = {
-            url: data.final || redirectUrl,
-            domain: urlInfo.hostname,
-            resumable: data.resumable || false,
-            contentType: data.contentType || '',
-            contentLength: data.contentLength || '',
-            acceptRanges: data.acceptRanges || '',
-            redirects: data.redirects || 0,
-            chain: data.chain || [redirectUrl],
-            // CDN-specific params
+            url: data.final || redirectUrl, domain: urlInfo.hostname,
+            resumable: data.resumable || false, contentType: data.contentType || '',
+            contentLength: data.contentLength || '', acceptRanges: data.acceptRanges || '',
+            redirects: data.redirects || 0, chain: data.chain || [redirectUrl],
             expireTime: params.exp_time ? new Date(parseInt(params.exp_time) * 1000).toISOString() : null,
-            sign: params.sign || null,
-            tag: params.tag || null,
-            bitrate: params.lr || params.br || null,
-            maxBitrate: params.lra || null,
-            // File info from path
+            sign: params.sign || null, tag: params.tag || null,
+            bitrate: params.lr || params.br || null, maxBitrate: params.lra || null,
             filename: urlInfo.pathname ? urlInfo.pathname.split('/').pop() : null,
         };
-
-        // Quality from filename
         const qMatch = (cdnInfo.filename || '').match(/_(\d+p)\./);
         cdnInfo.quality = qMatch ? qMatch[1] : null;
-
-        // Video ID from path
         const idMatch = (urlInfo.pathname || '').match(/\/(\d{4,})\//);
         cdnInfo.videoId = idMatch ? idMatch[1] : null;
-
-        // Is link expired?
         if (cdnInfo.expireTime) {
             cdnInfo.expired = new Date(cdnInfo.expireTime) < new Date();
-            cdnInfo.expiresIn = cdnInfo.expired ? 'EXPIRED' :
-                Math.round((new Date(cdnInfo.expireTime) - new Date()) / 60000) + ' min';
+            cdnInfo.expiresIn = cdnInfo.expired ? 'EXPIRED' : Math.round((new Date(cdnInfo.expireTime) - new Date()) / 60000) + ' min';
         }
-
-        // Size
         if (cdnInfo.contentLength) {
             const bytes = parseInt(cdnInfo.contentLength);
-            cdnInfo.sizeHuman = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' :
-                bytes > 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
+            cdnInfo.sizeHuman = bytes > 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : bytes > 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
         }
 
         setProgress(80, '🔄 Whitelist...');
-
-        // Update whitelist with discovered domains
         if (videoPageData?.workerWhitelist) {
-            const domainsToAdd = new Set();
-            domainsToAdd.add(cdnInfo.domain);
-            if (data.chain) {
-                data.chain.forEach(cu => {
-                    try { domainsToAdd.add(new URL(cu).hostname); } catch {}
-                });
-            }
-            for (const d of domainsToAdd) {
-                if (d && !videoPageData.workerWhitelist.required.some(w => w.domain === d)) {
-                    videoPageData.workerWhitelist.required.push({ domain: d, role: 'CDN (redirect)', required: true });
-                }
-            }
-            videoPageData.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' +
-                videoPageData.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
+            const domainsToAdd = new Set([cdnInfo.domain]);
+            if (data.chain) data.chain.forEach(cu => { try { domainsToAdd.add(new URL(cu).hostname); } catch {} });
+            for (const d of domainsToAdd) { if (d && !videoPageData.workerWhitelist.required.some(w => w.domain === d)) videoPageData.workerWhitelist.required.push({ domain: d, role: 'CDN (redirect)', required: true }); }
+            videoPageData.workerWhitelist.code = 'const ALLOWED_TARGETS = [\n' + videoPageData.workerWhitelist.required.map(d => `  "${d.domain}",  // ${d.role}`).join('\n') + '\n];';
         }
 
-        // Store redirect analysis
         if (!videoPageData) videoPageData = { analyzed: true, url: redirectUrl };
         videoPageData.redirectAnalysis = cdnInfo;
-
-        // Add to redirectResolution
         if (!videoPageData.redirectResolution) videoPageData.redirectResolution = [];
         videoPageData.redirectResolution.push({
-            original: redirectUrl,
-            final: data.final || redirectUrl,
-            chain: data.chain || [redirectUrl],
-            redirectCount: data.redirects || 0,
-            contentType: data.contentType,
-            contentLength: data.contentLength,
-            resumable: data.resumable,
-            pattern: 'cdn_direct',
-            manualInput: true
+            original: redirectUrl, final: data.final || redirectUrl, chain: data.chain || [redirectUrl],
+            redirectCount: data.redirects || 0, contentType: data.contentType, contentLength: data.contentLength,
+            resumable: data.resumable, pattern: 'cdn_direct', manualInput: true
         });
-
         videoPageData._transportLog = transportLog;
 
         setProgress(90, '🔄 Config...');
         analysisResult = buildFinalJSON();
-
-        // Add redirect analysis to parserConfig
         if (analysisResult.parserConfig) {
             analysisResult.parserConfig.CDN_REDIRECT = {
-                domain: cdnInfo.domain,
-                resumable: cdnInfo.resumable,
-                contentType: cdnInfo.contentType,
-                size: cdnInfo.sizeHuman || cdnInfo.contentLength,
-                quality: cdnInfo.quality,
-                videoId: cdnInfo.videoId,
-                expireTime: cdnInfo.expireTime,
-                expired: cdnInfo.expired,
+                domain: cdnInfo.domain, resumable: cdnInfo.resumable, contentType: cdnInfo.contentType,
+                size: cdnInfo.sizeHuman || cdnInfo.contentLength, quality: cdnInfo.quality, videoId: cdnInfo.videoId,
+                expireTime: cdnInfo.expireTime, expired: cdnInfo.expired,
                 sign: cdnInfo.sign ? '***' + cdnInfo.sign.substring(cdnInfo.sign.length - 8) : null,
-                tag: cdnInfo.tag,
-                bitrate: cdnInfo.bitrate,
+                tag: cdnInfo.tag, bitrate: cdnInfo.bitrate,
                 urlTemplate: cdnInfo.domain + (urlInfo.pathname || '').replace(/\/\d{4,}\//g, '/{id}/').replace(/[a-f0-9]{20,}/g, '{hash}'),
                 note: 'CDN URL analyzed from manual redirect input'
             };
         }
-
-        displayResults(analysisResult);
-        setProgress(100, '✅');
-        setStatus('✅ Redirect analyzed! CDN: ' + cdnInfo.domain, 'success');
-
-    } catch (e) {
-        setStatus('❌ ' + e.message, 'error');
-        logT('Redirect error: ' + e.message, 'fail');
-    }
+        displayResults(analysisResult); setProgress(100, '✅'); setStatus('✅ CDN: ' + cdnInfo.domain, 'success');
+    } catch (e) { setStatus('❌ ' + e.message, 'error'); logT('Redirect error: ' + e.message, 'fail'); }
     if (btn) { btn.disabled = false; btn.textContent = isVideoMode() ? '🎬 Анализ видео' : '🚀 Анализ каталога'; }
 }
 
@@ -1269,11 +1351,10 @@ async function runDirectTest() {
                     const vTag = vDoc.querySelector('video source[src],video[src]');
                     const ogV = vDoc.querySelector('meta[property="og:video"]');
                     checks.push({ icon: vTag ? '✅' : ogV ? '✅' : '⚠️', label: vTag ? '<video> tag' : ogV ? 'og:video' : 'Video in JS only', hint: vTag ? 'Direct' : ogV ? 'Meta' : 'Regex needed' });
-                    // KVS check
                     const vInline = Array.from(vDoc.querySelectorAll('script')).map(s => s.textContent).join('\n');
                     const kvs = detectKvsEngine(vh, vInline);
                     if (kvs.isKvs) checks.push({ icon: '⚠️', label: 'KVS engine', hint: kvs.note });
-                    if (/\/get_file\/\d+\//.test(vInline + vh)) checks.push({ icon: '⚠️', label: '/get_file/ pattern', hint: 'Needs redirect follow' });
+                    if (/\/get_file\/\d+\//.test(vInline + vh)) checks.push({ icon: '⚠️', label: '/get_file/', hint: 'Needs redirect follow' });
                 }
             } catch (e) { checks.push({ icon: '❌', label: 'Video page', hint: e.message }) }
         }
@@ -1281,7 +1362,7 @@ async function runDirectTest() {
 
     const ok = checks.filter(c => c.icon === '✅').length, fail = checks.filter(c => c.icon === '❌').length;
     const verdict = fail === 0 ? { v: 'ok', l: '✅ Compatible' } : ok > fail ? { v: 'partial', l: '⚠️ Partial' } : { v: 'fail', l: '❌ Incompatible' };
-    analysisResult = { _meta: { url, mode: 'direct-test', tool: 'v4.2.1' }, directTest: { checks, verdict: verdict.v, verdictLabel: verdict.l } };
+    analysisResult = { _meta: { url, mode: 'direct-test', tool: 'v5.0.0' }, directTest: { checks, verdict: verdict.v, verdictLabel: verdict.l } };
     let h = `<div class="dt-block${verdict.v === 'fail' ? ' fail' : ''}"><h3${verdict.v === 'fail' ? ' class="fail-title"' : ''}>🧪 ${esc(url)}</h3><div class="dt-grid">`;
     checks.forEach(c => { h += `<div class="dt-item"><span class="dt-icon">${c.icon}</span><div class="dt-text"><strong>${esc(c.label)}</strong><span class="dt-hint">${esc(c.hint)}</span></div></div>` });
     h += `</div><div class="dt-summary"><div class="verdict ${verdict.v}">${esc(verdict.l)}</div></div></div>`;
@@ -1305,11 +1386,12 @@ function buildFinalJSON() {
         r.videoCards = catalogData.videoCards;
         r.navigation = { categories: catalogData.navigation.categories, channels: catalogData.navigation.channels, sorting: catalogData.navigation.sorting, urlScheme: catalogData.navigation.urlScheme };
         r.architecture = catalogData.architecture;
+        r.buildUrlPatterns = catalogData.buildUrlPatterns;
     }
     if (videoPageData) {
-        if (!catalogData) r._meta = { mode: 'video', analyzedAt: new Date().toISOString(), tool: 'v4.2.1' };
+        if (!catalogData) r._meta = { mode: 'video', analyzedAt: new Date().toISOString(), tool: 'v5.0.0' };
         r._meta.videoPageUrl = videoPageData.url;
-        if (catalogData) r._meta.mode = 'catalog+video'; else r._meta.mode = 'video';
+        r._meta.mode = catalogData ? 'catalog+video' : 'video';
         r.videoPage = {
             url: videoPageData.url, title: videoPageData.videoTitle || videoPageData.title, poster: videoPageData.poster,
             player: videoPageData.playerStructure?.player, qualityMap: videoPageData.playerStructure?.qualityMap,
@@ -1319,10 +1401,14 @@ function buildFinalJSON() {
             externalScripts: videoPageData.externalScripts?.filter(s => s.videoFound) || [],
             redirectChain: videoPageData.playerStructure?.redirectChain || null,
             kvsEngine: videoPageData.playerStructure?.kvsEngine || null,
-            redirectResolution: videoPageData.redirectResolution || null
+            redirectResolution: videoPageData.redirectResolution || null,
+            sStrategies: videoPageData.sStrategies || null,
+            extendedPlayers: videoPageData.extendedPlayers || null,
+            debugReport: videoPageData.debugReport || null
         };
         r.urlFormat = videoPageData.urlFormat; r.workerWhitelist = videoPageData.workerWhitelist;
         r.parserFlow = videoPageData.parserFlow;
+        r.workerVerdict = videoPageData.workerVerdict;
     }
     const prot = catalogData?.protection || videoPageData?.protection;
     if (prot) {
@@ -1340,7 +1426,6 @@ function buildFinalJSON() {
 async function runFullAnalysis() {
     const pm = ($('proxySelect') || {}).value;
     if (pm === 'direct-test') return runDirectTest();
-    if (pm === 'redirect-test') return runRedirectAnalysis();
     if (isVideoMode()) return runVideoAnalysis();
     return runCatalogAnalysis();
 }
@@ -1359,7 +1444,7 @@ function displayResults(d) {
 }
 
 // ================================================================
-// ARCHITECTURE RENDER
+// ARCHITECTURE RENDER v5
 // ================================================================
 function genArch(d) {
     if (d.directTest) return '';
@@ -1369,6 +1454,49 @@ function genArch(d) {
     if (d.compatibility?.length) {
         h += '<div class="compat-block"><h3>🧪 Совместимость</h3><div class="compat-grid">';
         d.compatibility.forEach(c => { h += `<div class="compat-item"><span class="compat-icon">${c.icon}</span><div class="compat-text"><strong>${esc(c.label)}</strong><span class="hint">${esc(c.hint)}</span></div></div>` });
+        h += '</div></div>';
+    }
+
+    // Worker Verdict
+    if (d.workerVerdict) {
+        const wv = d.workerVerdict;
+        const vColor = wv.required ? (wv.mode === 'impossible' ? '#f44' : '#fa0') : '#0f8';
+        h += `<div class="ab"><h3 style="color:${vColor}">⚡ Worker: ${esc(wv.summary)}</h3>`;
+        if (wv.reasons?.length) {
+            h += '<div class="acg">';
+            wv.reasons.forEach(r => { h += `<div class="aci"><span class="aci-i">${r.type === 'impossible' ? '❌' : '⚠️'}</span><span class="aci-l">${esc(r.reason)}</span><span class="aci-v warn">${esc(r.type)}</span></div>` });
+            h += '</div>';
+        }
+        h += '</div>';
+    }
+
+    // S-Strategies
+    const ss = d.videoPage?.sStrategies;
+    if (ss?.matched?.length) {
+        h += `<div class="ab"><h3 style="color:#0df">📊 S-Strategies (Block ${ss.recommendedBlock})</h3>`;
+        h += '<div class="acg">';
+        ss.matched.forEach(s => {
+            const blockColor = s.block === 1 ? '#0f8' : s.block === 2 ? '#fd4' : s.block === 3 ? '#fa0' : '#f44';
+            h += `<div class="aci"><span class="aci-i" style="color:${blockColor}">S${s.s}</span><span class="aci-l">${esc(s.name)}</span><span class="aci-v ok">${'⭐'.repeat(s.block)}</span></div>`;
+        });
+        h += '</div></div>';
+    }
+
+    // Debug Report
+    const dr = d.videoPage?.debugReport;
+    if (dr) {
+        h += '<div class="ab"><h3>🔍 Debug Report (14 patterns)</h3><div class="acg">';
+        for (const [name, count] of Object.entries(dr)) {
+            h += `<div class="aci"><span class="aci-i">${count > 0 ? '✅' : '—'}</span><span class="aci-l">${esc(name)}</span><span class="aci-v ${count > 0 ? 'ok' : 'n'}">${count}</span></div>`;
+        }
+        h += '</div></div>';
+    }
+
+    // Extended Players
+    const ep = d.videoPage?.extendedPlayers;
+    if (ep?.length) {
+        h += '<div class="ab"><h3>🎮 Extended Players</h3><div class="acg">';
+        ep.forEach(p => { h += `<div class="aci"><span class="aci-i">🎮</span><span class="aci-l">${esc(p.name)} (${esc(p.strategy)})</span><span class="aci-v ok">${esc(p.type || '')}</span></div>` });
         h += '</div></div>';
     }
 
@@ -1388,45 +1516,33 @@ function genArch(d) {
         if (rc) {
             h += '<div class="redir-info">';
             h += `<span class="ri-l">Requires follow:</span><span class="ri-v">${rc.requiresFollow ? '✅ Yes' : '❌ No'}</span>`;
-            h += `<span class="ri-l">get_file pattern:</span><span class="ri-v">${rc.getFilePattern ? '✅ Detected' : '—'}</span>`;
-            h += `<span class="ri-l">Patterns:</span><span class="ri-v">${(rc.patterns || []).map(p => esc(p.type)).join(', ') || '—'}</span>`;
+            h += `<span class="ri-l">get_file:</span><span class="ri-v">${rc.getFilePattern ? '✅' : '—'}</span>`;
             h += '</div>';
         }
-        // KVS Engine
         if (kvs) {
-            h += '<div class="kvs-block"><h4>🏭 KVS Engine Detection</h4>';
-            h += `<div style="margin-bottom:6px;font-size:11px;color:${kvs.isKvs ? '#0f8' : '#888'}">${esc(kvs.note)} (${Math.round(kvs.confidence * 100)}%)</div>`;
+            h += '<div class="kvs-block"><h4>🏭 KVS Engine</h4>';
+            h += `<div style="font-size:11px;color:${kvs.isKvs ? '#0f8' : '#888'}">${esc(kvs.note)} (${Math.round(kvs.confidence * 100)}%)</div>`;
             h += '<div class="kvs-markers">';
-            for (const [k, v] of Object.entries(kvs.markers || {})) {
-                h += `<span class="kvs-marker ${v ? 'on' : 'off'}">${v ? '✓' : '✗'} ${esc(k)}</span>`;
-            }
+            for (const [k, v] of Object.entries(kvs.markers || {})) h += `<span class="kvs-marker ${v ? 'on' : 'off'}">${v ? '✓' : '✗'} ${esc(k)}</span>`;
             h += '</div></div>';
         }
-        // Resolved chains
         if (rr?.length) {
             h += '<div style="margin-top:10px"><strong style="color:#fa0;font-size:12px">📡 Resolved URLs</strong>';
             for (const r2 of rr) {
                 if (r2.error && !r2.fallback) {
-                    h += `<div style="background:#1a0a0a;padding:6px 8px;border-radius:4px;margin:4px 0;font-size:10px"><span style="color:#f55">❌ ${esc(r2.error)}</span><br><span style="color:#888">${esc((r2.original || '').substring(0, 80))}</span></div>`;
-                } else if (r2.fallback) {
-                    h += `<div style="background:#1a1a0a;padding:6px 8px;border-radius:4px;margin:4px 0;font-size:10px"><span style="color:#fa0">⚠️ Worker /resolve not available — add endpoint to Worker</span><br><span style="color:#888">${esc((r2.original || '').substring(0, 80))}</span></div>`;
+                    h += `<div style="background:#1a0a0a;padding:6px 8px;border-radius:4px;margin:4px 0;font-size:10px"><span style="color:#f55">❌ ${esc(r2.error)}</span></div>`;
                 } else {
                     h += '<div style="background:#0a1a0a;padding:6px 8px;border-radius:4px;margin:4px 0;font-size:10px">';
-                    h += `<span style="color:#0f8">✅ ${r2.redirectCount || 0} redirects</span>`;
-                    h += ` <span style="color:#888">${r2.resumable ? '📥 resumable' : '⚠️ not resumable'}</span>`;
-                    // Render chain
+                    h += `<span style="color:#0f8">✅ ${r2.redirectCount || 0} redirects</span> <span style="color:#888">${r2.resumable ? '📥 resumable' : '⚠️ not resumable'}</span>`;
                     if (r2.chain?.length > 1) {
                         h += '<div class="redir-chain" style="margin-top:4px">';
                         r2.chain.forEach((cu, idx) => {
                             if (idx > 0) h += '<span class="redir-arrow">→</span>';
                             const isLast = idx === r2.chain.length - 1;
-                            h += `<div class="redir-step"><strong>${isLast ? '✅ Final' : '302 #' + idx}</strong><code>${esc(cu.substring(0, 80))}</code><div class="rs-status ${isLast ? 's200' : 's302'}">${isLast ? '200 OK' : '302'}</div></div>`;
+                            h += `<div class="redir-step"><strong>${isLast ? '✅ Final' : '302 #' + idx}</strong><code>${esc(cu.substring(0, 80))}</code></div>`;
                         });
                         h += '</div>';
-                    } else {
-                        h += `<br><span style="color:#aaa;word-break:break-all">→ ${esc((r2.final || '').substring(0, 120))}</span>`;
-                    }
-                    if (r2.contentType) h += `<br><span style="color:#666">${esc(r2.contentType)} ${r2.contentLength ? '(' + r2.contentLength + ' bytes)' : ''}</span>`;
+                    } else h += `<br><span style="color:#aaa">→ ${esc((r2.final || '').substring(0, 120))}</span>`;
                     h += '</div>';
                 }
             }
@@ -1435,35 +1551,42 @@ function genArch(d) {
         h += '</div>';
     }
 
-	// CDN Redirect Analysis
+    // CDN Redirect Analysis
     const cdnR = d.parserConfig?.CDN_REDIRECT;
     if (cdnR) {
-        h += '<div class="ab"><h3 style="color:#0df">🔗 CDN Redirect Analysis</h3>';
-        h += '<div class="arg">';
+        h += '<div class="ab"><h3 style="color:#0df">🔗 CDN Redirect</h3><div class="arg">';
         h += `<span class="arl">Domain:</span><span class="arv"><code>${esc(cdnR.domain)}</code></span>`;
-        h += `<span class="arl">Resumable:</span><span class="arv">${cdnR.resumable ? '✅ Yes' : '❌ No'}</span>`;
-        h += `<span class="arl">Content-Type:</span><span class="arv"><code>${esc(cdnR.contentType)}</code></span>`;
+        h += `<span class="arl">Resumable:</span><span class="arv">${cdnR.resumable ? '✅' : '❌'}</span>`;
         if (cdnR.size) h += `<span class="arl">Size:</span><span class="arv">${esc(cdnR.size)}</span>`;
         if (cdnR.quality) h += `<span class="arl">Quality:</span><span class="arv">${esc(cdnR.quality)}</span>`;
-        if (cdnR.bitrate) h += `<span class="arl">Bitrate:</span><span class="arv">${esc(cdnR.bitrate)}</span>`;
         if (cdnR.tag) h += `<span class="arl">Tag:</span><span class="arv"><code>${esc(cdnR.tag)}</code></span>`;
         if (cdnR.expireTime) h += `<span class="arl">Expires:</span><span class="arv" style="color:${cdnR.expired ? '#f55' : '#0f8'}">${cdnR.expired ? '❌ EXPIRED' : '✅ ' + cdnR.expireTime}</span>`;
         if (cdnR.urlTemplate) h += `<span class="arl">Template:</span><span class="arv"><code>${esc(cdnR.urlTemplate)}</code></span>`;
         h += '</div></div>';
     }
 
-
     // Quality Map
     const qm = d.videoPage?.qualityMap;
     if (qm && Object.keys(qm).length) {
         h += '<div class="ab"><h3 class="gt">🎬 Quality Map</h3><table class="qm-table"><tr><th>Q</th><th>URL</th><th>Source</th><th>Method</th><th>Domain</th></tr>';
         for (const [q, info] of Object.entries(qm)) {
-    const decoded = info.decoded ? ' <span style="color:#0f8;font-size:8px">✅ decoded</span>' : '';
-    h += `<tr><td><strong>${esc(q)}</strong>${decoded}</td><td><code>${esc((info.url || '').substring(0, 70))}</code>`;
-    if (info.urlEncoded) h += `<br><span style="color:#888;font-size:8px">encoded: ${esc(info.urlEncoded.substring(0, 50))}...</span>`;
-    h += `</td><td>${esc(info.source)}</td><td>${esc(info.method)}</td><td><code>${esc(info.domain)}</code></td></tr>`;
-}
+            const decoded = info.decoded ? ' <span style="color:#0f8;font-size:8px">✅ decoded</span>' : '';
+            h += `<tr><td><strong>${esc(q)}</strong>${decoded}</td><td><code>${esc((info.url || '').substring(0, 70))}</code>`;
+            if (info.urlEncoded) h += `<br><span style="color:#888;font-size:8px">encoded: ${esc(info.urlEncoded.substring(0, 50))}...</span>`;
+            h += `</td><td>${esc(info.source)}</td><td>${esc(info.method)}</td><td><code>${esc(info.domain)}</code></td></tr>`;
+        }
         h += '</table></div>';
+    }
+
+    // Template Integration
+    const ti = d.parserConfig?._templateIntegration;
+    if (ti) {
+        h += '<div class="ab"><h3 style="color:#f80">🧩 Template Integration</h3><div class="arg">';
+        h += `<span class="arl">NAME:</span><span class="arv"><code>${esc(d.parserConfig?.NAME)}</code></span>`;
+        h += `<span class="arl">menu.json:</span><span class="arv"><code>${esc(ti.menuJson)}</code></span>`;
+        h += `<span class="arl">domainMap:</span><span class="arv"><code>${esc(ti.domainMap)}</code></span>`;
+        h += `<span class="arl">Worker:</span><span class="arv"><code>${esc(ti.workerWhitelist)}</code></span>`;
+        h += '</div></div>';
     }
 
     // Parser Flow
@@ -1471,34 +1594,25 @@ function genArch(d) {
         const pf = d.parserFlow;
         h += '<div class="ab"><h3 class="wt">🔗 Parser Flow</h3><div class="pf-chain">';
         h += `<div class="pf-step"><strong>📄 Catalog</strong><code>${esc(pf.catalog?.cardSelector || '?')}</code><br>${pf.catalog?.cardCount || 0} cards</div><span class="pf-arrow">→</span>`;
-        h += `<div class="pf-step"><strong>🔗 Card</strong>title: <code>${esc(pf.card?.titleSelector || '?')}</code><br>thumb: <code>${esc(pf.card?.thumbSelector || '?')}</code> [${esc(pf.card?.thumbAttribute || '')}]<br>link: <code>${esc(pf.card?.linkPattern || '?')}</code></div><span class="pf-arrow">→</span>`;
+        h += `<div class="pf-step"><strong>🔗 Card</strong>title: <code>${esc(pf.card?.titleSelector || '?')}</code><br>thumb: <code>${esc(pf.card?.thumbSelector || '?')}</code> [${esc(pf.card?.thumbAttribute || '')}]</div><span class="pf-arrow">→</span>`;
         h += `<div class="pf-step"><strong>▶️ Video</strong>`;
         (pf.videoPage?.strategies || []).forEach(s => { h += `<br>${'⭐'.repeat(s.priority) || '☆'} <code>${esc(s.method)}</code>` });
+        h += '</div></div></div>';
+    }
+
+    // buildUrl Patterns
+    if (d.buildUrlPatterns && Object.keys(d.buildUrlPatterns).length) {
+        h += '<div class="ab"><h3>🔧 buildUrl Patterns</h3><div class="arg">';
+        for (const [k, v] of Object.entries(d.buildUrlPatterns)) h += `<span class="arl">${esc(k)}:</span><span class="arv"><code>${esc(v)}</code></span>`;
         h += '</div></div>';
-        if (Object.keys(pf.requiredHeaders || {}).length) {
-            h += '<table class="st"><tr><th>Header</th><th>Value</th></tr>';
-            for (const [k, v] of Object.entries(pf.requiredHeaders)) h += `<tr><td><strong>${esc(k)}</strong></td><td><code>${esc(v)}</code></td></tr>`;
-            h += '</table>';
-        }
-        h += '</div>';
     }
 
-    // Video URL Templates
-    if (d.videoPage?.videoUrlTemplates?.length) {
-        h += '<div class="ab"><h3>📐 URL Templates</h3><table class="st"><tr><th>Template</th><th>Domain</th><th>Vars</th></tr>';
-        d.videoPage.videoUrlTemplates.forEach(t => { h += `<tr><td><code>${esc(t.template)}</code></td><td><code>${esc(t.domain)}</code></td><td>${(t.variables || []).map(v => `<span class="tag">${esc(v)}</span>`).join('')}</td></tr>` });
+    // VIDEO_RULES (template format)
+    const vr = d.parserConfig?.VIDEO_RULES;
+    if (vr?.length) {
+        h += '<div class="ab"><h3>🎮 VIDEO_RULES (template)</h3><table class="st"><tr><th>Label</th><th>Regex</th><th>Type</th></tr>';
+        vr.forEach(r => { h += `<tr><td><strong>${esc(r.label)}</strong></td><td><code style="font-size:9px">${esc(r.re)}</code></td><td>${esc(r.type)}</td></tr>` });
         h += '</table></div>';
-    }
-
-    // JS Configs
-    if (d.videoPage?.jsConfigs?.length) {
-        h += '<div class="ab"><h3>🎮 JS Player</h3>';
-        d.videoPage.jsConfigs.forEach(c => {
-            h += `<strong style="color:#0df">${esc(c.type)}</strong> `;
-            c.fields.forEach(f => { h += `<code style="color:#fa4;font-size:9px">${esc(f.quality)}</code>: <code style="color:#0f8;font-size:9px">${esc((f.url || '').substring(0, 50))}</code> ` });
-            h += `<br>Regex: <code style="color:#888;font-size:9px">${esc(c.regex)}</code><br>`;
-        });
-        h += '</div>';
     }
 
     // KT Decode
@@ -1507,19 +1621,16 @@ function genArch(d) {
         h += `<div class="ab"><h3 class="rt">🔑 kt_player Decode</h3><div class="arg">`;
         h += `<span class="arl">license_code:</span><span class="arv"><code>${esc(kt.licenseCode)}</code></span>`;
         h += `<span class="arl">Algorithm:</span><span class="arv"><code>${esc(kt.algorithm)}</code></span>`;
-        h += `<span class="arl">Chunk:</span><span class="arv">${kt.chunkSize}</span>`;
-        h += `<span class="arl">Modulo:</span><span class="arv">${kt.modulo}</span>`;
-        h += `<span class="arl">Direction:</span><span class="arv">${kt.direction}</span>`;
         h += '</div>';
         if (kt.decodeSnippet) h += `<pre style="background:#0a0a1e;color:#0f8;padding:8px;border-radius:5px;font-size:10px;margin-top:8px;white-space:pre-wrap">${esc(kt.decodeSnippet)}</pre>`;
         h += '</div>';
     }
 
-    // External JS
-    const extJS = d.videoPage?.externalScripts;
-    if (extJS?.length) {
-        h += '<div class="ab"><h3>📜 External JS</h3><div class="ext-js-block">';
-        extJS.forEach(s => { h += `<div class="ext-js-item"><code>${esc(s.src)}</code><span class="ejs-st" style="color:#0f8"> ✅ video found (${((s.size / 1024) | 0)}K)</span></div>` });
+    // cleanUrl Rules
+    const cur = d.parserConfig?.CLEAN_URL_RULES;
+    if (cur?.length) {
+        h += '<div class="ab"><h3>🧹 cleanUrl Rules</h3><div class="acg">';
+        cur.forEach(r => { h += `<div class="aci"><span class="aci-i">🔧</span><span class="aci-l">${esc(r)}</span></div>` });
         h += '</div></div>';
     }
 
@@ -1529,12 +1640,6 @@ function genArch(d) {
         h += `<div class="age-g"><h4>🔞 Age Gate <span class="gt-badge ${ag.type}">${esc(ag.type)}</span></h4><p>${esc(ag.note || '')}</p>`;
         if (ag.cookieName) h += `<div class="age-detail">Cookie: <code>${esc(ag.cookieName)}=${esc(ag.cookieValue || '1')}</code></div>`;
         h += '</div>';
-    }
-
-    // Recommendation
-    if (d.architecture?.recommendation) {
-        const rc2 = d.architecture.recommendation;
-        h += `<div class="ab"><h3 class="wt">🔧 Stack</h3><div class="arg"><span class="arl">Method:</span><span class="arv"><code>${esc(rc2.method)}</code></span><span class="arl">Tools:</span><span class="arv"><code>${esc(rc2.tools)}</code></span><span class="arl">Transport:</span><span class="arv">${esc(rc2.transport)}</span></div></div>`;
     }
 
     // URL Scheme
@@ -1549,12 +1654,6 @@ function genArch(d) {
         if (d.searchExamples?.length) {
             h += `<div class="us-section"><h4>🔍 Search «${esc(d._meta?.testWord || '')}»</h4><table class="us-table"><tr><th>Variant</th><th>URL</th></tr>`;
             d.searchExamples.forEach(u => { h += `<tr><td style="font-size:10px">${esc(u.label)}</td><td><code>${esc(u.url)}</code></td></tr>` });
-            h += `</table><div class="us-combo">Pattern: <code>${esc(d.searchPattern?.pattern || nav.urlScheme.search?.pattern || '')}</code></div></div>`;
-        }
-        const so = nav.sorting?.fromJs;
-        if (so?.length) {
-            h += `<div class="us-section"><h4>🔄 Sort (${so.length})</h4><table class="us-table"><tr><th>Label</th><th>Param</th></tr>`;
-            so.forEach(s => { h += `<tr><td>${esc(s.label)}</td><td><code>${esc(s.param)}</code></td></tr>` });
             h += '</table></div>';
         }
         if (nav.categories?.merged?.length) {
@@ -1570,17 +1669,25 @@ function genArch(d) {
         h += '</div>';
     }
 
-    // Card Selectors
+    // Card Selectors + Ranked
     if (d.videoCards?.found) {
         const cs = d.videoCards.cardSelectors;
-        h += `<div class="ab"><h3>🎯 Card Selectors (${d.videoCards.totalCardsFound})</h3><table class="st"><tr><th>Field</th><th>CSS Selector</th></tr>`;
+        h += `<div class="ab"><h3>🎯 Card Selectors (${d.videoCards.totalCardsFound})</h3><table class="st"><tr><th>Field</th><th>Selector</th></tr>`;
         h += `<tr><td><strong>container</strong></td><td><code>${esc(cs.container)}</code></td></tr>`;
         h += `<tr><td><strong>link</strong></td><td><code>${esc(cs.link || 'a[href]')}</code></td></tr>`;
         h += `<tr><td><strong>title</strong></td><td><code>${esc(cs.title || '—')}</code></td></tr>`;
         h += `<tr><td><strong>thumbnail</strong></td><td><code>${esc(cs.thumbnail || 'img')}</code> [${esc(cs.thumbnailAttr || 'src')}]</td></tr>`;
         h += `<tr><td><strong>duration</strong></td><td><code>${esc(cs.duration || '—')}</code></td></tr>`;
-        if (d.videoCards.linkPattern) h += `<tr><td><strong>linkPattern</strong></td><td><code>${esc(d.videoCards.linkPattern)}</code></td></tr>`;
-        h += '</table></div>';
+        h += '</table>';
+        // Ranked
+        if (d.videoCards.rankedSelectors?.length) {
+            h += '<div style="margin-top:8px"><strong style="font-size:10px;color:#888">Ranked selectors:</strong>';
+            d.videoCards.rankedSelectors.slice(0, 8).forEach(rs => {
+                h += `<div style="font-size:9px;padding:1px 4px"><code>${esc(rs.selector)}</code> × ${rs.count} ${rs.usable ? '<span style="color:#0f8">✓</span>' : '<span style="color:#888">—</span>'}</div>`;
+            });
+            h += '</div>';
+        }
+        h += '</div>';
     }
 
     // Sample Cards
@@ -1590,8 +1697,6 @@ function genArch(d) {
             h += `<div class="sample-card"><strong>#${i + 1}</strong> `;
             if (c.title) h += `<span class="sc-field">title:</span>${esc(c.title.substring(0, 50))} `;
             if (c.duration) h += `<span class="sc-field">dur:</span>${esc(c.duration)} `;
-            if (c.quality) h += `<span class="sc-field">q:</span>${esc(c.quality)} `;
-            if (c.views) h += `<span class="sc-field">views:</span>${esc(c.views)} `;
             if (c.link) h += `<br><span class="sc-field">link:</span><code>${esc(c.link.substring(0, 80))}</code>`;
             if (c.thumbnail) h += `<br><span class="sc-field">thumb:</span><code>${esc(c.thumbnail.substring(0, 80))}</code>`;
             h += '</div>';
@@ -1599,25 +1704,17 @@ function genArch(d) {
         h += '</div>';
     }
 
-    // URL Format
-    if (d.urlFormat?.cleanUrlRules?.length) {
-        h += '<div class="ab"><h3>🔧 cleanUrl rules</h3><div class="acg">';
-        d.urlFormat.cleanUrlRules.forEach(r2 => { h += `<div class="aci"><span class="aci-i">🔧</span><span class="aci-l">${esc(r2)}</span></div>` });
-        h += '</div></div>';
-    }
-
     // Summary
     const checks = [];
-    if (d.videoCards) checks.push({ i: '📄', l: 'Cards', v: d.videoCards.found ? d.videoCards.totalCardsFound + ' (' + d.videoCards.cardSelector + ')' : '❌ not found', c: d.videoCards.found ? 'ok' : 'fail' });
+    if (d.videoCards) checks.push({ i: '📄', l: 'Cards', v: d.videoCards.found ? d.videoCards.totalCardsFound + ' (' + d.videoCards.cardSelector + ')' : '❌', c: d.videoCards.found ? 'ok' : 'fail' });
     if (d.navigation) {
         checks.push({ i: '📁', l: 'Categories', v: d.navigation.categories?.totalCount || 0, c: d.navigation.categories?.totalCount ? 'ok' : 'n' });
         checks.push({ i: '📺', l: 'Channels', v: d.navigation.channels?.totalCount || 0, c: d.navigation.channels?.totalCount ? 'ok' : 'n' });
     }
     if (d.searchPattern) checks.push({ i: '🔍', l: 'Search', v: d.searchPattern.paramName || '—', c: d.searchPattern.paramName ? 'ok' : 'n' });
     if (d.videoPage?.qualityMap) checks.push({ i: '🎬', l: 'Qualities', v: Object.keys(d.videoPage.qualityMap).join(', ') || '—', c: Object.keys(d.videoPage.qualityMap).length ? 'ok' : 'n' });
-    if (d.videoPage?.player) checks.push({ i: '🎮', l: 'Player', v: d.videoPage.player, c: 'ok' });
-    if (d.videoPage?.redirectChain?.requiresFollow) checks.push({ i: '🔄', l: 'Redirect', v: 'follow required', c: 'warn' });
-    if (d.videoPage?.kvsEngine?.isKvs) checks.push({ i: '🏭', l: 'KVS', v: Math.round(d.videoPage.kvsEngine.confidence * 100) + '%', c: 'warn' });
+    if (ss?.matched?.length) checks.push({ i: '📊', l: 'S-Strategies', v: ss.totalDetected + ' (Block ' + ss.recommendedBlock + ')', c: 'ok' });
+    if (d.workerVerdict) checks.push({ i: '⚡', l: 'Worker', v: d.workerVerdict.mode, c: d.workerVerdict.required ? 'warn' : 'ok' });
     if (d.workerWhitelist) checks.push({ i: '📡', l: 'Whitelist', v: d.workerWhitelist.required.length + ' domains', c: 'ok' });
     if (checks.length) {
         h += '<div class="ab"><h3>✅ Summary</h3><div class="acg">';
@@ -1657,8 +1754,8 @@ function clip(t) {
 }
 
 function copyResults() { if (analysisResult) clip(JSON.stringify(analysisResult, null, 2)) }
-function copyParserConfig() { if (analysisResult?.parserConfig) { clip(JSON.stringify(analysisResult.parserConfig, null, 2)); setStatus('⚙️ Config copied!', 'success') } }
-function copyWhitelist() { if (analysisResult?.workerWhitelist?.code) { clip(analysisResult.workerWhitelist.code); setStatus('📡 Whitelist copied!', 'success') } else setStatus('No data', 'error') }
+function copyParserConfig() { if (analysisResult?.parserConfig) { clip(JSON.stringify(analysisResult.parserConfig, null, 2)); setStatus('⚙️ Config!', 'success') } }
+function copyWhitelist() { if (analysisResult?.workerWhitelist?.code) { clip(analysisResult.workerWhitelist.code); setStatus('📡 Whitelist!', 'success') } else setStatus('No data', 'error') }
 
 document.addEventListener('DOMContentLoaded', () => {
     const ui = $('targetUrl'); if (ui) ui.addEventListener('keypress', e => { if (e.key === 'Enter') runFullAnalysis() });
