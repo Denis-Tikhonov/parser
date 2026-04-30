@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Site Structure Analyzer v6.0.0</title>
+    <title>Site Structure Analyzer v7.0.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="container">
-    <h1>🔍 Site Structure Analyzer <span class="ver">v6.0.0</span></h1>
-    <p class="desc">Unified S1-S28 strategies · Priority ordering · Mirror detection · Full JSON output</p>
+    <h1>🔍 Site Structure Analyzer <span class="ver">v7.0.0</span></h1>
+    <p class="desc">Unified S1-S28 · Interactive hints · Cumulative JSON · Visual + Actions</p>
 
     <div class="worker-block">
         <div class="worker-block-header">
@@ -78,10 +78,12 @@
     <div id="results" class="results" style="display:none">
         <h2>📊 Результаты</h2>
         <div class="tabs">
-            <button class="tab active" onclick="showTab('formatted')">JSON</button>
+            <button class="tab active" onclick="showTab('arch')">🏗️ Архитектура</button>
+            <button class="tab" onclick="showTab('formatted')">JSON</button>
             <button class="tab" onclick="showTab('raw')">Raw</button>
         </div>
-        <div id="tab-formatted" class="tab-content active"><pre id="jsonFormatted"></pre></div>
+        <div id="tab-arch" class="tab-content active"><div id="archReport"></div></div>
+        <div id="tab-formatted" class="tab-content"><pre id="jsonFormatted"></pre></div>
         <div id="tab-raw" class="tab-content"><textarea id="jsonRaw" readonly></textarea></div>
     </div>
 </div>
