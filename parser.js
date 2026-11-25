@@ -1,7 +1,10 @@
 // ================================================================
-// SITE STRUCTURE ANALYZER v7.0.0
+// SITE STRUCTURE ANALYZER v7.1.1
 // Unified S1-S28 · Interactive hints · Cumulative JSON
-// CDN pattern detection · Per-section pagination · Dead strategies
+// CDN · pagination · dead strategies
+// [7.1.1] Цель: бриф для НАПИСАНИЯ парсера (не готовый код) + feasibility
+//         PARSER_BRIEF: всё нужное для AdultJS + Worker whitelist/риски
+// [7.1.0] Feasibility A–D · URL class · category-false CARD · PLAY_RISKS
 // ================================================================
 
 const DEFAULT_WORKER_URL = "https://zonaproxy.777b737.workers.dev";
@@ -23,6 +26,206 @@ const getTestWord = () => ($('testWord')?.value.trim() || 'wife');
 const isVideoMode = () => $('videoModeCheck')?.checked || false;
 const UA = { desktop: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120', mobile: 'Mozilla/5.0 (Linux; Android 13) Mobile Chrome/120', bot: 'Googlebot/2.1' };
 function getUA() { const s = $('uaSelect'); return s ? UA[s.value] || UA.desktop : UA.desktop }
+
+// ================================================================
+// v7.1.1 — URL class · Feasibility · Play risks
+// ================================================================
+function classifyPageUrl(url) {
+    try {
+        const u = new URL(url);
+        const p = u.pathname + u.search;
+        if (/view_video\.php|viewkey=|\/embed\/|\/watch\/[^/]+|\/videos?\/\d|\/movie\/[^/]+|\/video-[a-zA-Z0-9]+/i.test(p))
+            return 'video';
+        if (/[?&]c=\d+|\/categories?\//i.test(p) && !/\/videos?\//i.test(p))
+            return 'category';
+        return 'catalog';
+    } catch { return 'catalog'; }
+}
+
+function normalizeCardLink(href, base) {
+    if (!href) return '';
+    let h = resolve(href, base);
+    try {
+        const u = new URL(h);
+        const q = u.searchParams.get('url');
+        if (q && (q.includes('/videos/') || q.includes('/video') || q.startsWith('/')))
+            return resolve(q, base);
+    } catch { }
+    return h;
+}
+
+function isLikelyCategoryCard(link, title) {
+    if (!link) return true;
+    const l = String(link).toLowerCase();
+    if (/[?&]c=\d+/.test(l)) return true;
+    if (/\/video\?c=/.test(l)) return true;
+    if (/\/categories?\//.test(l) && !/\/videos?\//.test(l)) return true;
+    if (/\/sexlist\/[^/]+\/?$/.test(l) && !/\/movie\//.test(l)) return true;
+    return false;
+}
+
+function detectPlayRisks(html, strategies, playerUrls) {
+    const risks = [];
+    const h = html || '';
+    const urls = ((playerUrls || []).join(' ')) + ' ' + h.slice(0, 80000);
+    if (/fromCharCode\s*\(/.test(h) && h.length < 2500)
+        risks.push({ id: 'cf_challenge', level: 'D', text: 'JS-challenge / short body — CF Worker часто блокируется' });
+    if (/\/video\/get_media/i.test(h) || /get_media\?s=/i.test(urls))
+        risks.push({ id: 'get_media', level: 'D', text: 'get_media + IP-binding — на CF часто 474 (Pornhub-class)' });
+    if (/[?&]ip=\d+\.\d+\.\d+\.\d+/.test(urls) && /validfrom=|hash=/i.test(urls))
+        risks.push({ id: 'ip_bound_cdn', level: 'D', text: 'CDN с ip= в подписи — второй egress IP → 403/404' });
+    if (/URISigningPackage=/i.test(urls))
+        risks.push({ id: 'uri_signing', level: 'C', text: 'URISigningPackage — safeDecode + minimal headers' });
+    if (/\.m3u8/i.test(urls) && !/\.mp4(\?|$)/i.test(urls))
+        risks.push({ id: 'hls_only', level: 'C', text: 'Только HLS — TV/Stick часто без картинки' });
+    if (/\/function\/\d+\//i.test(h + urls))
+        risks.push({ id: 'kvs_function0', level: 'C', text: 'KVS function/N — IP-sign (HD tube class)' });
+    if (/remote_control\.php/i.test(urls))
+        risks.push({ id: 'remote_control', level: 'C', text: 'remote_control.php signed CDN' });
+    const conf = (strategies || []).filter(s => s.active && s.confidence === 'confirmed');
+    if (!conf.length)
+        risks.push({ id: 'no_confirmed_play', level: 'C', text: 'Нет confirmed play-стратегии' });
+    return risks;
+}
+
+function scoreFeasibility(card, strategies, risks, protection) {
+    const reasons = [];
+    let grade = 'A';
+    const order = { A: 0, B: 1, C: 2, D: 3 };
+    let riskMax = 0;
+    (risks || []).forEach(r => { riskMax = Math.max(riskMax, order[r.level] || 0); });
+    if (riskMax >= 3) { grade = 'D'; reasons.push('критичный PLAY_RISK'); }
+    else if (riskMax >= 2) { grade = 'C'; reasons.push('сложный play'); }
+    else if (riskMax >= 1) { grade = 'B'; reasons.push('нужны cookies/referer/worker-нюансы'); }
+
+    if (!card || !card.found || !(card.totalFound > 0)) {
+        if (order[grade] < 2) grade = 'C';
+        reasons.push('каталог карточек не найден');
+    } else if (card.validationWarnings && card.validationWarnings.length) {
+        if (grade === 'A') grade = 'B';
+        reasons.push('предупреждения CARD');
+    }
+    if (protection && (protection.cloudflare || protection.cloudflareTurnstile)) {
+        if (grade === 'A') grade = 'B';
+        reasons.push('Cloudflare');
+    }
+    const conf = (strategies || []).filter(s => s.active && s.confidence === 'confirmed');
+    if (conf.some(s => /direct_mp4|get_file|mp4/i.test(String(s.name || '') + String(s.id || ''))))
+        reasons.push('есть прямой поток');
+    const label = { A: 'Брать в работу', B: 'Пробовать', C: 'Дорого / низкий шанс', D: 'Отсев — не тратить время' };
+    return {
+        grade,
+        label: label[grade],
+        scoreNote: 'Вероятность успеха AdultJS + Worker (не трудозатраты)',
+        reasons: uniq(reasons),
+        recommendWork: grade === 'A' || grade === 'B'
+    };
+}
+
+function nameQualityCheck(name) {
+    const warnings = [];
+    const n = (name || '').toLowerCase();
+    if (!name || name.length < 3) warnings.push('NAME слишком короткий');
+    if (['video', 'www', 'http', 'index', 'main', 'tube', 'porn'].includes(n))
+        warnings.push('NAME слишком общий: ' + name);
+    if (/^rt\.|^www/i.test(name || '')) warnings.push('NAME похож на обрезанный хост');
+    return { name, warnings };
+}
+
+
+/**
+ * v7.1.1 — сводка для автора парсера (НЕ исходник плагина).
+ * Минимум ручной доводки: URL, селекторы/паттерны, play, CDN, cookies, риски.
+ */
+function buildParserBrief(r) {
+    const card = r.CARD || {};
+    const strats = Array.isArray(r.STRATEGIES) ? r.STRATEGIES.filter(s => s.active) : [];
+    const confirmed = strats.filter(s => s.confidence === 'confirmed');
+    const host = (r.HOST || r._meta?.baseUrl || '').replace(/\/$/, '');
+    const cdn = [];
+    (r.WORKER_WHITELIST?.all || r.WORKER_WHITELIST?.required || []).forEach(x => {
+        if (x && x.domain) cdn.push({ domain: x.domain, role: x.role || '' });
+    });
+    confirmed.forEach(s => {
+        (s.foundUrls || []).forEach(u => {
+            try {
+                const h = new URL(u).hostname;
+                if (h && !cdn.some(c => c.domain === h)) cdn.push({ domain: h, role: 'from play URL' });
+            } catch { }
+        });
+    });
+
+    const missing = [];
+    if (!card.found || !(card.totalFound > 0)) missing.push('карточки каталога (селекторы link/title/thumb)');
+    if (!confirmed.length) missing.push('confirmed-стратегия извлечения видео');
+    if (!r.SEARCH?.pattern && !r.BUILD_URL?.search) missing.push('URL поиска (опционально)');
+    if (!(r.CATEGORIES && r.CATEGORIES.length) && !(r.MAIN_PAGE_PATHS && r.MAIN_PAGE_PATHS.length))
+        missing.push('категории/разделы (опционально)');
+    if (!cdn.length) missing.push('CDN-домены для Worker ALLOWED_TARGETS');
+
+    const playHow = confirmed.map(s => ({
+        strategy: s.name || s.id,
+        method: s.extractionMethod || s.desc || '',
+        exampleUrls: (s.foundUrls || []).slice(0, 3),
+        confidence: s.confidence
+    }));
+
+    const risks = r.PLAY_RISKS || [];
+    const feas = r.FEASIBILITY || {};
+
+    return {
+        purpose: 'Информация для написания парсера AdultJS вручную. Это не готовый код плагина.',
+        site: {
+            host,
+            suggestedParserId: r.NAME,
+            nameWarnings: (r.NAME_QUALITY && r.NAME_QUALITY.warnings) || [],
+            urlClassOfAnalyzedPage: r.URL_CLASS || null
+        },
+        catalog: {
+            ok: !!(card.found && card.totalFound > 0),
+            totalSample: card.totalFound || 0,
+            container: card.container || null,
+            link: card.link || null,
+            title: card.title || null,
+            thumb: card.thumb || null,
+            thumbAttr: card.thumbAttr || null,
+            duration: card.duration || null,
+            sampleLinks: (card.sampleCards || []).slice(0, 5).map(c => ({
+                link: c.link, title: c.title, thumb: c.thumbnail || c.thumb, duration: c.duration
+            })),
+            warnings: card.validationWarnings || []
+        },
+        navigation: {
+            search: r.SEARCH || r.BUILD_URL?.search || null,
+            categoryPattern: r.BUILD_URL?.category || r.URL_SCHEME?.category || null,
+            pagination: r.BUILD_URL?.pagination || r.URL_SCHEME?.pagination || null,
+            mainPaths: r.MAIN_PAGE_PATHS || [],
+            categoriesFound: (r.CATEGORIES || []).slice(0, 30)
+        },
+        play: {
+            ok: confirmed.length > 0,
+            strategies: playHow,
+            deadOrWeak: (r.DEAD_STRATEGIES || []).slice(0, 8),
+            risks
+        },
+        worker: {
+            verdict: r.WORKER_VERDICT || null,
+            whitelistSuggested: cdn,
+            cookiesHints: (r.PROTECTION && r.PROTECTION.requiredHeaders) || null,
+            ageGate: (r.PROTECTION && r.PROTECTION.ageGate) || null
+        },
+        completeness: {
+            readyToWriteParser: missing.length === 0 && (feas.recommendWork !== false),
+            missingForMinimalParser: missing,
+            note: missing.length
+                ? 'Не хватает данных — доберите catalog/video-прогоном или ручной проверкой страницы'
+                : 'Базовых данных достаточно, чтобы написать парсер; учтите PLAY_RISKS и FEASIBILITY'
+        },
+        feasibility: feas
+    };
+}
+
+
 
 // ================================================================
 // NAME GENERATOR
@@ -412,11 +615,13 @@ function detectAllStrategies(html, allJS, base) {
 // CARD DETECTION v7 — extended selectors for [class*="tit"], [class*="dur"]
 // ================================================================
 const RANKED_CARD_SELECTORS = [
+    'li.pcVideoListItem', 'li.videoblock',
     '.video-block', '.video-item', 'div.thumb_main', '.thumb',
-    '.thumb-item', '.item', 'article.video', '.video-thumb', '.video',
+    '.thumb-item', '.item', 'article.video', '.video-thumb',
     '.video-card', '.video_block', '.clip', '.gallery-item', 'article.post',
     '.card', '[data-video-id]', '[data-id]',
-    '.mozaique .thumb-block', '.list-videos .video-item', 'div.thumb'
+    '.mozaique .thumb-block', '.list-videos .video-item', 'div.thumb',
+    '.video'
 ];
 
 function aCards(doc, base) {
@@ -574,6 +779,18 @@ function aCards(doc, base) {
     }
     if (r.sampleCards.length && r.sampleCards.every(c => !c.duration)) {
         r.validationWarnings.push('No durations found — cards may not be video cards');
+    }
+
+    // v7.1: normalize ?url= links + drop category/menu cards
+    if (!r.validationWarnings) r.validationWarnings = [];
+    r.sampleCards = (r.sampleCards || []).map(c => {
+        if (c.link) c.link = normalizeCardLink(c.link, base);
+        return c;
+    }).filter(c => !isLikelyCategoryCard(c.link, c.title));
+    r.totalFound = r.sampleCards.length;
+    if (r.sampleCards.length === 0) {
+        r.found = false;
+        r.validationWarnings.push('CARD cleared: samples looked like categories/menu, not videos');
     }
 
     return r;
@@ -1079,7 +1296,7 @@ async function runCatalogAnalysis() {
     const base = baseOf(url), btn = $('btnAnalyze');
     if (btn) { btn.disabled = true; btn.textContent = '⏳' }
     $('results').style.display = 'none'; updCI('hidden'); updW(!!getW()); transportLog = [];
-    const result = { _meta: { analyzedUrl: url, baseUrl: base, analyzedAt: new Date().toISOString(), mode: 'catalog', testWord: getTestWord(), tool: 'v7.0.0' } };
+    const result = { _meta: { analyzedUrl: url, baseUrl: base, analyzedAt: new Date().toISOString(), mode: 'catalog', testWord: getTestWord(), tool: 'v7.1.1' } };
 
     try {
         setStatus('📥', 'loading'); setProgress(10, '📡');
@@ -1403,7 +1620,7 @@ function buildFinalJSON() {
 
     r._meta = { analyzedUrl: catalogData?._meta?.analyzedUrl || videoPageData?.url, baseUrl: base,
         analyzedAt: new Date().toISOString(), mode: (catalogData && videoPageData) ? 'catalog+video' : catalogData ? 'catalog' : 'video',
-        testWord: getTestWord(), tool: 'v7.0.0', videoPageUrl: videoPageData?.url || null };
+        testWord: getTestWord(), tool: 'v7.1.1', videoPageUrl: videoPageData?.url || null };
 
     r.templateIntegration = {
         menuJson: `{ "title": "${r.SITE_NAME}", "playlist_url": "${r.NAME}" }`,
@@ -1492,6 +1709,37 @@ function buildFinalJSON() {
     // Analysis history
     if (analysisHistory.length) r._analysisHistory = analysisHistory;
 
+    // v7.1 Feasibility + play risks (вероятность успеха плагина, не трудозатраты)
+    try {
+        const htmlForRisk = (videoPageData && videoPageData.htmlSnippet) || '';
+        const strats = r.STRATEGIES || r.ACTIVE_STRATEGIES || [];
+        const stratArr = Array.isArray(strats) ? strats : Object.keys(strats || {}).filter(k => strats[k]).map(k => ({ id: k, active: true, confidence: 'confirmed' }));
+        const foundUrls = [];
+        (r.STRATEGIES || []).forEach(s => { if (s.foundUrls) foundUrls.push(...s.foundUrls); });
+        r.PLAY_RISKS = detectPlayRisks(htmlForRisk, stratArr, foundUrls);
+        r.FEASIBILITY = scoreFeasibility(r.CARD, r.STRATEGIES || stratArr, r.PLAY_RISKS, r.PROTECTION);
+        r.URL_CLASS = classifyPageUrl(r._meta?.analyzedUrl || r.HOST || '');
+        r.NAME_QUALITY = nameQualityCheck(r.NAME);
+        if (r.URL_CLASS === 'video' && r.CARD && r.CARD.found) {
+            r.FEASIBILITY.reasons = uniq((r.FEASIBILITY.reasons || []).concat(['анализ video-URL: CARD может быть меню/категориями']));
+        }
+        r.PARSER_BRIEF = buildParserBrief(r);
+        // feasibility с учётом полноты брифа
+        if (r.PARSER_BRIEF && r.PARSER_BRIEF.completeness) {
+            const miss = r.PARSER_BRIEF.completeness.missingForMinimalParser || [];
+            if (miss.length && r.FEASIBILITY.grade === 'A') {
+                r.FEASIBILITY.grade = 'B';
+                r.FEASIBILITY.label = 'Пробовать';
+                r.FEASIBILITY.reasons = uniq((r.FEASIBILITY.reasons || []).concat(['бриф неполный: ' + miss.join('; ')]));
+                r.FEASIBILITY.recommendWork = true;
+            }
+            r.PARSER_BRIEF.feasibility = r.FEASIBILITY;
+        }
+    } catch (e) {
+        r.FEASIBILITY = { grade: 'C', label: 'Ошибка оценки', reasons: [String(e.message || e)] };
+        r.PARSER_BRIEF = { purpose: 'error', error: String(e.message || e) };
+    }
+
     return r;
 }
 
@@ -1510,6 +1758,57 @@ function genArch(d) {
             h += `<div class="history-item"><span class="hi-icon">${icon}</span><span class="hi-url">${esc((a.url || '').substring(0, 60))}</span><span class="hi-type">${esc(a.type)}</span></div>`;
         });
         h += '</div>';
+    }
+
+    // ── FEASIBILITY v7.1 ──
+    if (d.FEASIBILITY) {
+        const g = d.FEASIBILITY.grade || '?';
+        const col = { A: '#1b5e20', B: '#f9a825', C: '#e65100', D: '#b71c1c' }[g] || '#333';
+        h += `<div class="ab" style="border-left:6px solid ${col}"><h3>🎚️ Feasibility: <span style="color:${col}">${esc(g)}</span> — ${esc(d.FEASIBILITY.label || '')}</h3>`;
+        h += `<p class="muted">${esc(d.FEASIBILITY.scoreNote || '')}</p><ul>`;
+        (d.FEASIBILITY.reasons || []).forEach(x => { h += `<li>${esc(x)}</li>`; });
+        h += '</ul>';
+        if (d.PLAY_RISKS && d.PLAY_RISKS.length) {
+            h += '<p><strong>PLAY_RISKS</strong></p><ul>';
+            d.PLAY_RISKS.forEach(rk => { h += `<li>[${esc(rk.level)}] ${esc(rk.text)}</li>`; });
+            h += '</ul>';
+        }
+        if (d.NAME_QUALITY && d.NAME_QUALITY.warnings && d.NAME_QUALITY.warnings.length) {
+            h += '<p><strong>NAME</strong>: ' + esc(d.NAME || '') + '</p><ul>';
+            d.NAME_QUALITY.warnings.forEach(w => { h += `<li>${esc(w)}</li>`; });
+            h += '</ul>';
+        }
+        h += `<p>URL class: <code>${esc(d.URL_CLASS || '')}</code> · recommendWork: <b>${d.FEASIBILITY.recommendWork ? 'yes' : 'no'}</b></p></div>`;
+    }
+
+    // ── PARSER BRIEF v7.1.1 ──
+    if (d.PARSER_BRIEF && d.PARSER_BRIEF.site) {
+        const b = d.PARSER_BRIEF;
+        h += `<div class="ab"><h3>📋 Бриф для написания парсера</h3>`;
+        h += `<p class="muted">${esc(b.purpose || '')}</p>`;
+        h += `<table class="st"><tr><th>Блок</th><th>Статус / данные</th></tr>`;
+        h += `<tr><td>Host / id</td><td><code>${esc(b.site.host || '')}</code> · NAME <code>${esc(b.site.suggestedParserId || '')}</code></td></tr>`;
+        h += `<tr><td>Каталог</td><td>${b.catalog && b.catalog.ok ? '✅' : '❌'} samples=${esc(String(b.catalog?.totalSample || 0))} · container <code>${esc(b.catalog?.container || '—')}</code></td></tr>`;
+        h += `<tr><td>Play</td><td>${b.play && b.play.ok ? '✅' : '❌'} strategies=${esc(String((b.play?.strategies || []).length))}</td></tr>`;
+        h += `<tr><td>Worker CDN</td><td>${esc((b.worker?.whitelistSuggested || []).map(x => x.domain).join(', ') || '—')}</td></tr>`;
+        const miss = b.completeness?.missingForMinimalParser || [];
+        h += `<tr><td>Полнота</td><td>${b.completeness?.readyToWriteParser ? '✅ можно писать' : '⚠️ неполно'} ${miss.length ? '· не хватает: ' + esc(miss.join('; ')) : ''}</td></tr>`;
+        h += `</table>`;
+        if (b.catalog && b.catalog.sampleLinks && b.catalog.sampleLinks.length) {
+            h += '<p><strong>Примеры карточек</strong></p><ul>';
+            b.catalog.sampleLinks.slice(0, 3).forEach(c => {
+                h += `<li>${esc(c.title || '')} → <code>${esc((c.link || '').substring(0, 80))}</code></li>`;
+            });
+            h += '</ul>';
+        }
+        if (b.play && b.play.strategies && b.play.strategies.length) {
+            h += '<p><strong>Как брать видео</strong></p><ul>';
+            b.play.strategies.forEach(s => {
+                h += `<li><code>${esc(s.strategy)}</code> — ${esc(s.method || '')} · ${esc((s.exampleUrls || [])[0] || '').substring(0, 70)}</li>`;
+            });
+            h += '</ul>';
+        }
+        h += `<p class="muted">${esc(b.completeness?.note || '')}</p></div>`;
     }
 
     // ── CARDS ──
